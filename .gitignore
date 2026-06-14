@@ -13,3 +13,4 @@ backups/
 hugo-site/data/webmentions/*.json
 hugo-site/data/replies/*.json
 macroblog.config.yaml
+.env
