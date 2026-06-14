@@ -1,4 +1,7 @@
-import { parse, stringify } from "js-yaml";
+import yaml from "js-yaml";
+
+const parse = (s: string) => yaml.load(s) as any;
+const stringify = (o: any) => yaml.dump(o);
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -33,6 +36,8 @@ export interface BlueskyConfig {
   enabled: boolean;
   handle: string;
   pds_url: string;
+  /** Override OAuth scopes. Leave blank to use least-privilege granular scopes. */
+  scope?: string;
 }
 
 export interface MastodonConfig {
@@ -92,7 +97,7 @@ const DEFAULTS: MacroblogConfig = {
   hugo: { binary: "hugo", theme: "", version: "0.147.0" },
   auth: { password_hash: "", session_secret: "" },
   crossposting: {
-    bluesky: { enabled: false, handle: "", pds_url: "https://bsky.social" },
+    bluesky: { enabled: false, handle: "", pds_url: "https://bsky.social", scope: "" },
     mastodon: { enabled: false, instance_url: "" },
   },
   webmentions: { send: true, receive: true, moderation: true },

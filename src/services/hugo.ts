@@ -102,6 +102,7 @@ async function doFullBuild(): Promise<void> {
 }
 
 async function runPagefind(): Promise<void> {
+  if (process.env.MACROBLOG_NO_BUILD === "1" || process.env.MACROBLOG_SKIP_PAGEFIND === "1") return;
   try {
     await $`npx -y pagefind --site ${PUBLIC_DIR} --output-path ${join(PUBLIC_DIR, "pagefind")}`.quiet();
   } catch (err) {
@@ -115,6 +116,7 @@ async function runPagefind(): Promise<void> {
  * schedule a debounced full Phase 2 build.
  */
 export function triggerBuild(): void {
+  if (process.env.MACROBLOG_NO_BUILD === "1") return;
   // Kick a build immediately, debounced so bursts coalesce.
   scheduleFullBuild();
   pingMicroblog().catch(() => {});
@@ -122,6 +124,7 @@ export function triggerBuild(): void {
 
 /** Debounce full builds by 5s to coalesce bursts of posts. */
 export function scheduleFullBuild(delayMs = 5000): void {
+  if (process.env.MACROBLOG_NO_BUILD === "1") return;
   if (phase2Timer) clearTimeout(phase2Timer);
   phase2Timer = setTimeout(() => {
     phase2Timer = null;

@@ -1,0 +1,20 @@
+import type { PostType } from "../../lib/micropub-parser.ts";
+
+export interface CrosspostPhoto {
+  url: string; // absolute URL
+  alt?: string;
+}
+
+export interface CrosspostPayload {
+  text: string; // plain-text content (markdown stripped)
+  url: string; // canonical permalink
+  title?: string;
+  type: PostType;
+  photos: CrosspostPhoto[];
+  inReplyTo?: string;
+}
+
+export interface CrosspostResult {
+  remoteId: string;
+  remoteUrl: string;
+}
