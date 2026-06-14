@@ -1,0 +1,13 @@
+{{ define "main" }}
+<h1 class="section-title">Photos</h1>
+<div class="photo-grid">
+  {{ $photos := where .Site.RegularPages "Section" "photos" }}
+  {{ range $photos }}
+    {{ range .Params.photos }}
+    <a class="photo-cell" href="{{ $.Permalink }}">
+      <img src="{{ .url }}" alt="{{ .alt }}" loading="lazy" />
+    </a>
+    {{ end }}
+  {{ end }}
+</div>
+{{ end }}

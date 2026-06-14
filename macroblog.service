@@ -1,0 +1,20 @@
+[Unit]
+Description=Macroblog Microblog Server
+After=network.target
+
+[Service]
+Type=simple
+# These are filled in by setup-service.sh; edit if you move the install.
+User=__USER__
+WorkingDirectory=__DIR__
+ExecStart=__BUN__ run src/server.ts
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

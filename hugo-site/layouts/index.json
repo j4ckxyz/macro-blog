@@ -1,0 +1,45 @@
+{{- /* JSON Feed 1.1 — read by Micro.blog for syndication. */ -}}
+{{- $reply := .Site.Params.include_reply_type -}}
+{{- $pages := where .Site.RegularPages "Section" "in" (slice "posts" "articles" "photos" "bookmarks" "podcasts") -}}
+{{- if $reply }}{{ $pages = .Site.RegularPages }}{{ end -}}
+{{- $limit := 40 -}}
+{{- $items := first $limit $pages -}}
+{{- $feed := dict
+  "version" "https://jsonfeed.org/version/1.1"
+  "title" .Site.Title
+  "home_page_url" .Site.BaseURL
+  "feed_url" (printf "%sfeed.json" .Site.BaseURL)
+  "description" .Site.Params.description
+  "author" (dict "name" .Site.Params.author.name "url" .Site.BaseURL "avatar" (printf "%s%s" .Site.BaseURL (.Site.Params.avatar | strings.TrimPrefix "/")))
+-}}
+{{- $arr := slice -}}
+{{- range $items -}}
+  {{- $item := dict
+    "id" .Permalink
+    "url" .Permalink
+    "content_html" .Content
+    "date_published" (.Date.Format "2006-01-02T15:04:05Z07:00")
+  -}}
+  {{- with .Title }}{{ $item = merge $item (dict "title" .) }}{{ end -}}
+  {{- with .Params.categories }}{{ $item = merge $item (dict "tags" .) }}{{ end -}}
+  {{- $attachments := slice -}}
+  {{- with .Params.photos -}}
+    {{- range . -}}
+      {{- $mime := "image/jpeg" -}}
+      {{- if strings.HasSuffix (lower .url) ".png" }}{{ $mime = "image/png" }}{{ end -}}
+      {{- if strings.HasSuffix (lower .url) ".gif" }}{{ $mime = "image/gif" }}{{ end -}}
+      {{- if strings.HasSuffix (lower .url) ".webp" }}{{ $mime = "image/webp" }}{{ end -}}
+      {{- $attachments = $attachments | append (dict "url" .url "mime_type" $mime) -}}
+    {{- end -}}
+  {{- end -}}
+  {{- with .Params.podcast_url -}}
+    {{- $dur := $.Params.podcast_duration | default "" -}}
+    {{- $att := dict "url" . "mime_type" ($.Params.podcast_mime_type | default "audio/mpeg") -}}
+    {{- with $dur }}{{ $att = merge $att (dict "duration_in_seconds" .) }}{{ end -}}
+    {{- $attachments = $attachments | append $att -}}
+  {{- end -}}
+  {{- if gt (len $attachments) 0 }}{{ $item = merge $item (dict "attachments" $attachments) }}{{ end -}}
+  {{- $arr = $arr | append $item -}}
+{{- end -}}
+{{- $feed = merge $feed (dict "items" $arr) -}}
+{{- $feed | jsonify (dict "indent" "  ") -}}

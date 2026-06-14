@@ -1,0 +1,59 @@
+{{ define "main" }}
+<article class="h-entry post post-{{ .Params.type | default "post" }}">
+  {{ if .Title }}<h1 class="p-name post-title">{{ .Title }}</h1>{{ end }}
+
+  {{ with .Params.reply_to_url }}
+  <p class="reply-context">In reply to
+    <a class="u-in-reply-to" href="{{ . }}">{{ with $.Params.reply_to_hostname }}{{ . }}{{ else }}{{ . }}{{ end }}</a>
+  </p>
+  {{ end }}
+
+  {{ with .Params.bookmark_url }}
+  <p class="bookmark-context">🔖 <a class="u-bookmark-of" href="{{ . }}">{{ with $.Params.bookmark_title }}{{ . }}{{ else }}{{ . }}{{ end }}</a></p>
+  {{ end }}
+
+  <div class="e-content">
+    {{ with .Params.photos }}
+    <div class="photos">
+      {{ range . }}
+      <img class="u-photo" src="{{ .url }}" alt="{{ .alt }}" loading="lazy" />
+      {{ end }}
+    </div>
+    {{ end }}
+    {{ .Content }}
+  </div>
+
+  {{ with .Params.podcast_url }}
+  <audio class="u-audio" controls src="{{ . }}"></audio>
+  {{ end }}
+
+  <footer class="post-meta">
+    <a class="u-url" href="{{ .Permalink }}">
+      <time class="dt-published" datetime="{{ .Date.Format "2006-01-02T15:04:05Z07:00" }}">{{ .Date.Format "Jan 2, 2006 3:04 PM" }}</time>
+    </a>
+    {{ with .Params.categories }}
+    <span class="categories">
+      {{ range . }}<a class="p-category" href="{{ $.Site.BaseURL }}categories/{{ . | urlize }}/">#{{ . }}</a> {{ end }}
+    </span>
+    {{ end }}
+    {{ partial "microformats.html" . }}
+    {{ partial "syndication.html" . }}
+  </footer>
+
+  {{ $slug := path.Base .File.Path | replaceRE "\\.md$" "" }}
+  {{ $mentions := index .Site.Data.webmentions $slug }}
+  {{ with $mentions }}
+  <section class="webmentions">
+    <h2>Mentions</h2>
+    {{ range . }}
+    <div class="webmention webmention-{{ .type }}">
+      <a class="author" href="{{ .author.url }}">
+        {{ with .author.photo }}<img src="{{ . }}" alt="" width="32" height="32" />{{ end }}
+        {{ .author.name | default .author.url }}</a>
+      <div class="wm-content">{{ .content }}</div>
+    </div>
+    {{ end }}
+  </section>
+  {{ end }}
+</article>
+{{ end }}
