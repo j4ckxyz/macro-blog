@@ -1,0 +1,10 @@
+node_modules/
+public/
+macroblog.db
+macroblog.db-*
+*.log
+.DS_Store
+hugo-site/resources/
+hugo-site/.hugo_build.lock
+uploads/*
+!uploads/.gitkeep

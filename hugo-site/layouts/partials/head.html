@@ -1,0 +1,10 @@
+{{- /* IndieWeb discovery link tags — mirrors what Micro.blog emits. */ -}}
+<link rel="authorization_endpoint" href="{{ .Site.BaseURL }}indieauth/auth" />
+<link rel="token_endpoint" href="{{ .Site.BaseURL }}indieauth/token" />
+<link rel="micropub" href="{{ .Site.BaseURL }}micropub" />
+<link rel="webmention" href="{{ .Site.BaseURL }}webmention" />
+{{- with .Site.Params.author.username }}
+<link rel="me" href="https://micro.blog/{{ . }}" />
+{{- end }}
+<link rel="alternate" type="application/rss+xml" href="{{ .Site.BaseURL }}feed.xml" title="{{ .Site.Title }}" />
+<link rel="alternate" type="application/json" href="{{ .Site.BaseURL }}feed.json" title="{{ .Site.Title }}" />

@@ -1,0 +1,58 @@
+baseURL = "http://127.0.0.1:3000/"
+languageCode = "en"
+title = "Macroblog"
+enableEmoji = true
+summaryLength = 30
+
+[params]
+  avatar = "/uploads/avatar.jpg"
+  description = "A Macroblog."
+  theme_seconds = ""
+  twitter_username = ""
+  github_username = ""
+  include_reply_type = false
+  [params.author]
+    name = "Author"
+    username = "author"
+
+[taxonomies]
+  category = "categories"
+  tag = "tags"
+
+# Filenames are written as "<slug>.md", so :filename is always the slug —
+# this stays correct even for untitled microblog posts (empty title).
+[permalinks]
+  posts = "/:year/:month/:day/:filename/"
+  articles = "/:year/:month/:day/:filename/"
+  photos = "/:year/:month/:day/:filename/"
+  replies = "/:year/:month/:day/:filename/"
+  bookmarks = "/:year/:month/:day/:filename/"
+  podcasts = "/:year/:month/:day/:filename/"
+
+[outputs]
+  home = ["HTML", "RSS", "JSON"]
+  section = ["HTML", "RSS"]
+  page = ["HTML"]
+
+[outputFormats]
+  [outputFormats.JSON]
+    mediaType = "application/json"
+    baseName = "feed"
+    isPlainText = true
+    rel = "alternate"
+  [outputFormats.RSS]
+    mediaType = "application/rss+xml"
+    baseName = "feed"
+    rel = "alternate"
+
+[markup]
+  [markup.goldmark.renderer]
+    unsafe = true
+  [markup.highlight]
+    noClasses = false
+
+[security]
+  [security.exec]
+    allow = ['^(dart-)?sass(-embedded)?$', '^go$', '^npx$', '^postcss$', '^hugo$']
+  [security.funcs]
+    getenv = ['^HUGO_', '^CI$']

@@ -1,0 +1,10 @@
+{{ define "main" }}
+<h1 class="section-title">{{ .Title }}</h1>
+<div class="post-list h-feed">
+  {{ $paginator := .Paginate .Pages }}
+  {{ range $paginator.Pages }}
+  {{ partial "post-summary.html" . }}
+  {{ end }}
+</div>
+{{ template "_internal/pagination.html" . }}
+{{ end }}
