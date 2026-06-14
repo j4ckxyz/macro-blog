@@ -62,6 +62,28 @@ journalctl -u macroblog -f
 
 ---
 
+## Using the web admin
+
+Everything is managed from the browser — no config-file editing required for
+day-to-day use.
+
+1. Open **`http://127.0.0.1:3000/admin/`** (or your domain + `/admin/`).
+2. Sign in with the password you set via `--set-password`.
+3. You land on the **composer** (Micro.blog-style):
+   - Type a note and hit **Post**. Markdown is supported.
+   - The **⋯** menu holds post type (Note / Article / Photo / Bookmark), tags,
+     scheduling, "save as draft", and cross-post toggles.
+   - The toolbar adds images (upload), audio, bold, italic and links.
+4. The sidebar gives you **Posts**, **Mentions** (webmentions + Bluesky/Mastodon
+   replies you can answer inline), **Uploads**, and **Settings**.
+5. **Settings** is where you connect Bluesky/Mastodon, choose a theme, change
+   your password, toggle webmentions/feeds, **download a backup**, and rebuild.
+
+> First-run checklist: set `site.url` to your real domain, set a password,
+> connect any cross-posting accounts, then **Settings → Rebuild site**.
+
+---
+
 ## Making it reachable from the internet
 
 Macroblog binds to `127.0.0.1` by default and refuses to serve the admin API
@@ -281,6 +303,11 @@ src/
   db/                  bun:sqlite schema + migrations
 hugo-site/             Hugo root (config, default theme, content, data)
 ```
+
+## Credits
+
+- [Bun](https://bun.sh), [Hono](https://hono.dev), [Hugo](https://gohugo.io)
+- Admin UI icons from [Lucide](https://lucide.dev) (ISC), vendored inline — no CDN.
 
 ## License
 
