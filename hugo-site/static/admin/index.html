@@ -3,310 +3,422 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Macroblog Admin</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+  <title>Macroblog</title>
   <style>
-    body { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-    .ink { color: #111; }
-    textarea, input, select { font-family: inherit; }
-    .tab-active { border-bottom: 2px solid #111; font-weight: 700; }
+    :root{
+      --orange:#ff8c00; --blue:#3a6fd6; --blue-text:#3f7fd6; --blue-hover:#2f63c9;
+      --bg:#ffffff; --side:#f6f7f9; --border:#e4e6ea; --line:#eceef1;
+      --text:#222426; --muted:#8a9099; --field:#d4d8dd;
+      --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;height:100%}
+    body{font-family:var(--sans);color:var(--text);background:var(--bg);-webkit-font-smoothing:antialiased}
+    a{color:var(--blue-text);text-decoration:none}
+    button{font-family:inherit;cursor:pointer}
+
+    /* layout */
+    .shell{display:flex;min-height:100vh}
+    .sidebar{width:280px;flex:0 0 280px;background:var(--side);border-right:1px solid var(--border);padding:22px 16px;display:flex;flex-direction:column;gap:6px}
+    .main{flex:1;min-width:0;padding:26px 40px}
+
+    /* brand */
+    .brand{display:flex;align-items:center;gap:10px;margin:2px 4px 18px}
+    .brand .mark{width:34px;height:34px;border-radius:9px;background:var(--orange);display:flex;align-items:center;justify-content:center;color:#fff}
+    .brand .name{font-size:25px;font-weight:800;color:var(--orange);letter-spacing:-.5px}
+
+    /* new post button */
+    .newpost{display:flex;align-items:center;gap:10px;width:100%;background:#fff;border:1px solid #dfe2e6;border-radius:11px;padding:11px 14px;font-size:16px;font-weight:700;color:var(--text);box-shadow:0 1px 1px rgba(0,0,0,.02)}
+    .newpost:hover{background:#fbfbfc}
+
+    /* account row */
+    .account{display:flex;align-items:center;gap:10px;padding:14px 6px 12px}
+    .account .avatar{width:38px;height:38px;border-radius:50%;object-fit:cover;background:#dde1e6}
+    .account .handle{font-weight:700;font-size:16px}
+    .account .chev{margin-left:auto;color:var(--muted)}
+
+    /* nav */
+    .nav{display:flex;flex-direction:column;gap:2px;margin-top:2px}
+    .nav a{display:flex;align-items:center;gap:13px;padding:8px 8px;border-radius:9px;color:var(--blue-text);font-size:18px;font-weight:600}
+    .nav a .ic{width:22px;height:22px;display:flex;align-items:center;justify-content:center;color:var(--blue-text)}
+    .nav a:hover{background:#eef0f3}
+    .nav a.active{background:#e6ebf4}
+    .nav .sep{height:1px;background:var(--border);margin:12px 6px}
+    .nav .sign-out{margin-top:auto;color:var(--muted);font-weight:600;font-size:15px}
+
+    /* main: composer */
+    .post-head{font-size:22px;margin:2px 0 16px;display:flex;align-items:center;gap:8px}
+    .post-head b{font-weight:800}
+    .dots{margin-left:auto;width:34px;height:34px;border-radius:50%;border:0;background:transparent;color:var(--muted);font-size:22px}
+    .dots:hover{background:#f0f1f3}
+
+    .composer{max-width:1040px}
+    .editor{width:100%;min-height:360px;border:1.5px solid var(--field);border-radius:14px;padding:18px 20px;font-size:21px;line-height:1.5;font-family:var(--sans);resize:vertical;outline:none;color:var(--text)}
+    .editor:focus{border-color:#7aa7ee;box-shadow:0 0 0 3px rgba(58,111,214,.15)}
+    .editor::placeholder{color:#b3b9c0}
+
+    .titlefield{width:100%;border:1.5px solid var(--field);border-radius:12px;padding:12px 16px;font-size:18px;margin-bottom:10px;outline:none}
+    .titlefield:focus{border-color:#7aa7ee}
+
+    .toolbar{display:flex;align-items:center;gap:10px;margin-top:14px}
+    .tbtn{width:46px;height:42px;border:1px solid #e1e4e8;background:#fff;border-radius:9px;display:flex;align-items:center;justify-content:center;color:#5b616b}
+    .tbtn:hover{background:#f7f8f9}
+    .count{color:var(--muted);font-size:16px;margin-left:6px}
+    .count.over{color:#d33}
+    .spacer{flex:1}
+    .btn{border-radius:9px;padding:10px 20px;font-size:16px;font-weight:700;border:1px solid transparent}
+    .btn.secondary{background:#fff;border-color:#dfe2e6;color:var(--text)}
+    .btn.secondary:hover{background:#f7f8f9}
+    .btn.primary{background:var(--blue);color:#fff}
+    .btn.primary:hover{background:var(--blue-hover)}
+
+    .menu{border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px;background:#fbfcfd;box-shadow:0 4px 16px rgba(0,0,0,.05)}
+    .menu-label{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:10px 0 6px}
+    .menu-label:first-child{margin-top:0}
+    .menu input[type=text],.menu input[type=datetime-local]{border:1px solid #dfe2e6;border-radius:9px;padding:9px 11px;font-size:14px}
+    .types{display:flex;gap:8px;margin:0 0 4px}
+    .chip{border:1px solid #dfe2e6;background:#fff;border-radius:20px;padding:6px 14px;font-size:14px;font-weight:600;color:#555}
+    .chip.on{background:var(--blue);border-color:var(--blue);color:#fff}
+
+    .extras{display:flex;flex-wrap:wrap;gap:18px;align-items:center;margin-top:14px;color:var(--muted);font-size:14px}
+    .extras label{display:flex;align-items:center;gap:6px}
+    .extras input[type=text],.extras input[type=datetime-local]{border:1px solid #dfe2e6;border-radius:8px;padding:7px 10px;font-size:14px}
+    .toast{margin-top:14px;font-size:15px;color:#2a8a4a;min-height:20px}
+    .photolist{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+    .photolist img{width:70px;height:70px;object-fit:cover;border-radius:8px;border:1px solid var(--border)}
+    .drop{margin-top:10px;border:1.5px dashed #d4d8dd;border-radius:12px;padding:14px;color:var(--muted);font-size:14px;text-align:center}
+    .drop.hover{border-color:var(--blue);background:#f3f7ff}
+
+    /* lists / panels */
+    h2.section{font-size:20px;font-weight:800;margin:0 0 14px}
+    h3.sub{font-size:14px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:18px 0 8px}
+    .row{display:flex;align-items:center;justify-content:space-between;padding:14px 2px;border-bottom:1px solid var(--line)}
+    .row .meta{color:var(--muted);font-size:13px;margin-top:3px}
+    .tag{font-size:12px;background:#eef0f3;color:#586;border-radius:6px;padding:2px 7px;margin-right:8px;font-weight:600}
+    .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+    .grid img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;cursor:pointer;border:1px solid var(--border)}
+    .card{border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px}
+    .field{margin-bottom:12px;max-width:520px}
+    .field label{display:block;font-size:13px;color:var(--muted);margin-bottom:4px}
+    .field input,.field select{width:100%;border:1px solid #dfe2e6;border-radius:9px;padding:10px 12px;font-size:15px}
+    .ck{display:flex;align-items:center;gap:8px;font-size:15px;margin:6px 0}
+    .replybox{width:100%;border:1px solid #dfe2e6;border-radius:10px;padding:8px 10px;font-size:14px;margin-top:8px;resize:vertical}
+    select{font-family:inherit}
+
+    /* login */
+    .login{max-width:360px;margin:14vh auto;text-align:center}
+    .login .brand{justify-content:center}
+    .login input{width:100%;border:1.5px solid var(--field);border-radius:11px;padding:13px 15px;font-size:17px;margin-top:6px}
+    .login input:focus{outline:none;border-color:#7aa7ee}
+    .login .btn{width:100%;margin-top:14px}
+    .err{color:#d33;font-size:14px;margin-top:10px;min-height:18px}
+
+    @media(max-width:720px){.sidebar{display:none}.main{padding:18px}}
   </style>
 </head>
-<body class="bg-white text-neutral-900">
-  <div id="app" class="max-w-2xl mx-auto p-4"></div>
+<body>
+  <div id="app"></div>
 
   <script>
   const API = location.origin;
   let token = localStorage.getItem("mb_token") || "";
-  const app = document.getElementById("app");
+  let cfg = null;
+  let active = "composer";
+  const root = document.getElementById("app");
 
-  function h(tag, attrs = {}, ...kids) {
+  // tiny dom helper
+  function h(tag, attrs = {}, ...kids){
     const el = document.createElement(tag);
-    for (const [k, v] of Object.entries(attrs)) {
-      if (k === "class") el.className = v;
-      else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
-      else if (k === "html") el.innerHTML = v;
-      else el.setAttribute(k, v);
+    for (const [k,v] of Object.entries(attrs)){
+      if (k==="class") el.className=v;
+      else if (k==="html") el.innerHTML=v;
+      else if (k.startsWith("on")&&typeof v==="function") el.addEventListener(k.slice(2),v);
+      else if (v!=null) el.setAttribute(k,v);
     }
-    for (const kid of kids.flat()) {
-      if (kid == null) continue;
-      el.append(kid.nodeType ? kid : document.createTextNode(kid));
-    }
+    for (const kid of kids.flat()){ if(kid==null) continue; el.append(kid.nodeType?kid:document.createTextNode(kid)); }
     return el;
   }
+  const svg = (d)=>`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+  const ICON = {
+    pencil: svg('<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>'),
+    posts: svg('<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3.5" cy="6" r="1"/><circle cx="3.5" cy="12" r="1"/><circle cx="3.5" cy="18" r="1"/>'),
+    at: svg('<circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.9 7.9"/>'),
+    image: svg('<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.6"/><path d="m21 15-5-5L5 21"/>'),
+    gear: svg('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7 19.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 4.6 14H4.5a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 6 7l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 11 4.6V4.5a2 2 0 1 1 4 0v.1A1.6 1.6 0 0 0 17 6l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1A1.6 1.6 0 0 0 19.4 11h.1a2 2 0 1 1 0 4h-.1Z"/>'),
+    speaker: svg('<path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/>'),
+    bold: svg('<path d="M7 5h6a3.5 3.5 0 0 1 0 7H7zM7 12h7a3.5 3.5 0 0 1 0 7H7z"/>'),
+    italic: svg('<line x1="19" y1="4" x2="10" y2="4"/><line x1="14" y1="20" x2="5" y2="20"/><line x1="15" y1="4" x2="9" y2="20"/>'),
+    link: svg('<path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/>'),
+    chev: svg('<polyline points="6 9 12 15 18 9"/>'),
+  };
 
-  async function api(path, opts = {}) {
-    const headers = Object.assign({ Authorization: "Bearer " + token }, opts.headers || {});
-    if (opts.json) { headers["content-type"] = "application/json"; opts.body = JSON.stringify(opts.json); }
-    const res = await fetch(API + path, { ...opts, headers });
-    if (res.status === 401) { token = ""; localStorage.removeItem("mb_token"); renderLogin(); throw new Error("unauthorized"); }
+  async function api(path, opts={}){
+    const headers = Object.assign({Authorization:"Bearer "+token}, opts.headers||{});
+    if (opts.json){ headers["content-type"]="application/json"; opts.body=JSON.stringify(opts.json); }
+    const res = await fetch(API+path, {...opts, headers});
+    if (res.status===401){ token=""; localStorage.removeItem("mb_token"); renderLogin(); throw new Error("unauthorized"); }
     return res;
   }
 
-  // ---- Login ----
-  function renderLogin() {
-    app.innerHTML = "";
-    const pw = h("input", { type: "password", placeholder: "Password", class: "border rounded px-3 py-2 w-full" });
-    const err = h("p", { class: "text-red-600 text-sm mt-2" });
-    const btn = h("button", { class: "mt-3 bg-neutral-900 text-white px-4 py-2 rounded", onclick: async () => {
-      const res = await fetch(API + "/api/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password: pw.value }) });
-      if (!res.ok) { err.textContent = "Incorrect password"; return; }
-      const data = await res.json();
-      token = data.access_token; localStorage.setItem("mb_token", token); renderApp();
-    }}, "Sign in");
-    pw.addEventListener("keydown", (e) => { if (e.key === "Enter") btn.click(); });
-    app.append(h("h1", { class: "text-2xl font-bold mb-4" }, "Macroblog"), pw, btn, err);
-  }
-
-  // ---- Shell ----
-  const TABS = ["Composer", "Posts", "Media", "Mentions", "Settings"];
-  let active = "Composer";
-
-  function renderApp() {
-    app.innerHTML = "";
-    const nav = h("nav", { class: "flex gap-4 border-b mb-6 text-sm" },
-      ...TABS.map(t => h("button", { class: "py-2 " + (t === active ? "tab-active" : "text-neutral-500"), onclick: () => { active = t; renderApp(); } }, t)),
-      h("button", { class: "py-2 ml-auto text-neutral-400", onclick: () => { localStorage.removeItem("mb_token"); token=""; renderLogin(); } }, "Sign out"),
-    );
-    app.append(h("h1", { class: "text-xl font-bold mb-3" }, "Macroblog"), nav);
-    const view = h("div");
-    app.append(view);
-    ({ Composer: composer, Posts: postsView, Media: mediaView, Mentions: mentionsView, Settings: settingsView }[active])(view);
-  }
-
-  // ---- Composer ----
-  function composer(view) {
-    let type = "post";
-    const title = h("input", { placeholder: "Title (optional)", class: "border rounded px-3 py-2 w-full mb-2 hidden" });
-    const content = h("textarea", { placeholder: "What's on your mind?", rows: "6", class: "border rounded px-3 py-2 w-full mb-2" });
-    const cats = h("input", { placeholder: "tags, comma, separated", class: "border rounded px-3 py-2 w-full mb-2" });
-    const sched = h("input", { type: "datetime-local", class: "border rounded px-3 py-2 mb-2" });
-    const photos = [];
-    const photoList = h("div", { class: "text-xs text-neutral-500 mb-2" });
-    const fileInput = h("input", { type: "file", accept: "image/*", class: "mb-2", onchange: async (e) => {
-      for (const f of e.target.files) {
-        const fd = new FormData(); fd.set("file", f);
-        const res = await api("/api/media", { method: "POST", body: fd });
-        const data = await res.json();
-        photos.push({ url: data.url, alt: "" });
-        photoList.append(h("div", {}, "📎 " + data.url));
-      }
-    }});
-
-    const typeSel = h("div", { class: "flex gap-2 mb-3 text-sm" },
-      ...["post", "article", "photo", "bookmark"].map(t => h("button", {
-        class: "px-3 py-1 rounded border " + (t === type ? "bg-neutral-900 text-white" : ""),
-        onclick: () => { type = t; [...typeSel.children].forEach((b,i) => b.className = "px-3 py-1 rounded border " + (["post","article","photo","bookmark"][i] === t ? "bg-neutral-900 text-white" : "")); title.classList.toggle("hidden", t !== "article"); }
-      }, t)));
-
-    const xp = h("div", { class: "flex gap-4 mb-3 text-sm" });
-    api("/api/oauth/bluesky").then(r=>r.json()).then(d => { if (d.connected) xp.append(mkToggle("bluesky", "🦋 Bluesky")); });
-    api("/api/oauth/mastodon").then(r=>r.json()).then(d => { if (d.connected) xp.append(mkToggle("mastodon", "🐘 Mastodon")); });
-    const syndicate = new Set();
-    function mkToggle(uid, label) {
-      const cb = h("input", { type: "checkbox", onchange: e => e.target.checked ? syndicate.add(uid) : syndicate.delete(uid) });
-      return h("label", { class: "flex items-center gap-1" }, cb, label);
-    }
-
-    const status = h("p", { class: "text-sm mt-2" });
-    const submit = (draft) => async () => {
-      const body = {
-        type, content: content.value, title: title.value || undefined,
-        categories: cats.value.split(",").map(s=>s.trim()).filter(Boolean),
-        photos: photos.length ? photos : undefined,
-        bookmark_of: type === "bookmark" ? (prompt("Bookmark URL") || "") : undefined,
-        status: draft ? "draft" : "published",
-        published: sched.value ? new Date(sched.value).toISOString() : undefined,
-        syndicate_to: [...syndicate],
-      };
-      const res = await api("/api/posts", { method: "POST", json: body });
-      if (res.ok) { const p = await res.json(); status.textContent = "✓ Published: /" + p.slug; content.value = ""; title.value=""; cats.value=""; }
-      else status.textContent = "Error: " + (await res.text());
+  /* ---------------- login ---------------- */
+  function renderLogin(){
+    root.innerHTML="";
+    const pw = h("input",{type:"password",placeholder:"Password",autofocus:"true"});
+    const err = h("div",{class:"err"});
+    const go = async ()=>{
+      const r = await fetch(API+"/api/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({password:pw.value})});
+      if(!r.ok){ err.textContent="Incorrect password."; return; }
+      token=(await r.json()).access_token; localStorage.setItem("mb_token",token); boot();
     };
-
-    view.append(typeSel, title, content, cats,
-      h("div", { class: "mb-2" }, h("label", { class: "text-xs text-neutral-500" }, "Photo: "), fileInput), photoList,
-      h("div", { class: "mb-2" }, h("label", { class: "text-xs text-neutral-500 mr-2" }, "Schedule:"), sched),
-      xp,
-      h("div", { class: "flex gap-2" },
-        h("button", { class: "bg-neutral-900 text-white px-4 py-2 rounded", onclick: submit(false) }, "Publish"),
-        h("button", { class: "border px-4 py-2 rounded", onclick: submit(true) }, "Save Draft")),
-      status);
+    pw.addEventListener("keydown",e=>{if(e.key==="Enter")go();});
+    root.append(h("div",{class:"login"},
+      h("div",{class:"brand"}, h("div",{class:"mark",html:starSvg()}), h("div",{class:"name"},"Macroblog")),
+      pw, err, h("button",{class:"btn primary",onclick:go},"Sign in")));
   }
 
-  // ---- Posts ----
-  async function postsView(view) {
-    const sel = h("select", { class: "border rounded px-2 py-1 mb-3", onchange: () => load(sel.value) },
-      ...["", "published", "draft", "scheduled"].map(s => h("option", { value: s }, s || "all")));
-    const list = h("div");
-    view.append(sel, list);
-    async function load(status) {
-      list.innerHTML = "Loading…";
-      const res = await api("/api/posts" + (status ? "?status=" + status : ""));
-      const { posts } = await res.json();
-      list.innerHTML = "";
-      for (const p of posts) {
-        list.append(h("div", { class: "border-b py-2 flex justify-between items-center" },
-          h("div", {}, h("span", { class: "text-xs bg-neutral-100 px-1 rounded mr-2" }, p.post_type),
-            h("span", {}, p.title || p.slug), h("div", { class: "text-xs text-neutral-400" }, p.status + " · " + (p.published_at || p.created_at))),
-          h("button", { class: "text-red-600 text-sm", onclick: async () => { if (confirm("Delete?")) { await api("/api/posts/" + p.slug, { method: "DELETE" }); load(sel.value); } } }, "delete")));
+  function starSvg(){ return '<svg width="20" height="20" viewBox="0 0 24 24" fill="#fff"><path d="M12 2l2.6 6.3 6.8.5-5.2 4.4 1.7 6.6L12 16.9 6.1 20.3l1.7-6.6L2.6 8.8l6.8-.5z"/></svg>'; }
+
+  /* ---------------- shell ---------------- */
+  async function boot(){
+    if(!token){ renderLogin(); return; }
+    try{ cfg = await (await api("/api/config")).json(); }catch(e){ return; }
+    renderApp();
+  }
+
+  function host(){ try{ return new URL(cfg.site.url).host; }catch{ return cfg.site.url; } }
+
+  function renderApp(){
+    root.innerHTML="";
+    const main = h("div",{class:"main"});
+    const navItem=(id,icon,label)=>h("a",{class:"nav-a"+(active===id?" active":""),href:"#",onclick:e=>{e.preventDefault();active=id;renderApp();}},
+      h("span",{class:"ic",html:icon}), label);
+
+    const sidebar = h("div",{class:"sidebar"},
+      h("div",{class:"brand"}, h("div",{class:"mark",html:starSvg()}), h("div",{class:"name"},"Macroblog")),
+      h("button",{class:"newpost",onclick:()=>{active="composer";renderApp();}}, h("span",{class:"ic",html:ICON.pencil}), "New Post"),
+      h("div",{class:"account"},
+        h("img",{class:"avatar",src:(cfg.site.avatar||""),alt:"",onerror:"this.style.visibility='hidden'"}),
+        h("span",{class:"handle"},"@"+(cfg.site.username||"me")),
+        h("span",{class:"chev",html:ICON.chev})),
+      h("nav",{class:"nav"},
+        navItem("posts",ICON.posts,"Posts"),
+        navItem("mentions",ICON.at,"Mentions"),
+        navItem("media",ICON.image,"Uploads"),
+        h("div",{class:"sep"}),
+        navItem("settings",ICON.gear,"Settings"),
+        h("a",{class:"sign-out",href:"#",onclick:e=>{e.preventDefault();localStorage.removeItem("mb_token");token="";renderLogin();}},"Sign out")));
+
+    root.append(h("div",{class:"shell"}, sidebar, main));
+    ({composer,posts:postsView,media:mediaView,mentions:mentionsView,settings:settingsView}[active])(main);
+  }
+
+  /* ---------------- composer ---------------- */
+  function composer(view){
+    let type="post";
+    const photos=[];
+    const title=h("input",{class:"titlefield",placeholder:"Title",style:"display:none"});
+    const editor=h("textarea",{class:"editor",placeholder:"Hello from Macroblog. Use **Markdown** for styling, links, _and more_."});
+    const count=h("span",{class:"count"},"0/300");
+    const toast=h("div",{class:"toast"});
+    const tags=h("input",{type:"text",placeholder:"tags, comma separated"});
+    const sched=h("input",{type:"datetime-local"});
+    const photoList=h("div",{class:"photolist"});
+    let bookmarkUrl="";
+
+    editor.addEventListener("input",()=>{const n=[...editor.value].length;count.textContent=n+"/300";count.classList.toggle("over",n>300);});
+
+    const wrap=(d)=>{const s=editor.selectionStart,e=editor.selectionEnd,v=editor.value;editor.value=v.slice(0,s)+d+v.slice(s,e)+d+v.slice(e);editor.focus();editor.dispatchEvent(new Event("input"));};
+    const tb=(icon,fn)=>h("button",{class:"tbtn",html:icon,onclick:fn});
+    const fileInput=h("input",{type:"file",accept:"image/*",multiple:"true",style:"display:none",onchange:e=>upload(e.target.files)});
+    async function upload(files){
+      for(const f of files){const fd=new FormData();fd.set("file",f);const d=await (await api("/api/media",{method:"POST",body:fd})).json();if(d.url){photos.push({url:d.url,alt:""});photoList.append(h("img",{src:d.url}));}}
+    }
+    // drag-and-drop straight onto the editor
+    ["dragover","dragenter"].forEach(ev=>editor.addEventListener(ev,e=>{e.preventDefault();editor.style.borderColor="#7aa7ee";}));
+    ["dragleave","drop"].forEach(ev=>editor.addEventListener(ev,e=>{e.preventDefault();editor.style.borderColor="";}));
+    editor.addEventListener("drop",e=>{if(e.dataTransfer.files.length)upload(e.dataTransfer.files);});
+
+    const syndicate=new Set();
+    const mkToggle=(uid,label)=>{const cb=h("input",{type:"checkbox",onchange:e=>e.target.checked?syndicate.add(uid):syndicate.delete(uid)});return h("label",{class:"ck"},cb,label);};
+
+    // The "⋯" options menu (post type, cross-posting, schedule, drafts) — mirrors Micro.blog.
+    const types=h("div",{class:"types"},
+      ...[["post","Note"],["article","Article"],["photo","Photo"],["bookmark","Bookmark"]].map(([t,l])=>
+        h("button",{class:"chip"+(t===type?" on":""),onclick:()=>{type=t;[...types.children].forEach((c,i)=>c.classList.toggle("on",["post","article","photo","bookmark"][i]===t));title.style.display=t==="article"?"block":"none";bookmarkRow.style.display=t==="bookmark"?"block":"none";}},l)));
+    const bookmarkRow=h("div",{style:"display:none;margin-top:8px"},h("input",{class:"titlefield",placeholder:"Bookmark URL",oninput:e=>bookmarkUrl=e.target.value}));
+    const xp=h("div",{style:"margin-top:10px"});
+    api("/api/oauth/bluesky").then(r=>r.json()).then(d=>{if(d.connected)xp.append(mkToggle("bluesky","🦋 Cross-post to Bluesky"));});
+    api("/api/oauth/mastodon").then(r=>r.json()).then(d=>{if(d.connected)xp.append(mkToggle("mastodon","🐘 Cross-post to Mastodon"));});
+
+    const menu=h("div",{class:"menu",style:"display:none"},
+      h("div",{class:"menu-label"},"Post type"), types,
+      bookmarkRow,
+      h("div",{class:"menu-label"},"Tags"), tags,
+      h("div",{class:"menu-label"},"Schedule"), sched,
+      xp,
+      h("div",{style:"margin-top:12px;display:flex;gap:8px"},
+        h("button",{class:"btn secondary",style:"padding:8px 14px",onclick:submit(true)},"Save as draft")),
+      photoList);
+
+    const dots=h("button",{class:"dots",title:"Options",html:"⋯",onclick:()=>{menu.style.display=menu.style.display==="none"?"block":"none";}});
+
+    function submit(draft){return async()=>{
+      const body={type,content:editor.value,title:title.value||undefined,
+        categories:tags.value.split(",").map(s=>s.trim()).filter(Boolean),
+        photos:photos.length?photos:undefined,
+        bookmark_of:type==="bookmark"?bookmarkUrl:undefined,
+        status:draft?"draft":"published",
+        published:sched.value?new Date(sched.value).toISOString():undefined,
+        syndicate_to:[...syndicate]};
+      const r=await api("/api/posts",{method:"POST",json:body});
+      if(r.ok){const p=await r.json();toast.textContent=(draft?"✓ Saved draft":"✓ Posted to "+host())+" — /"+p.slug;editor.value="";title.value="";tags.value="";photos.length=0;photoList.innerHTML="";count.textContent="0/300";menu.style.display="none";}
+      else toast.textContent="Error: "+(await r.text());
+    };}
+
+    view.append(
+      h("div",{class:"post-head"},"Post to your blog: ",h("b",{},host()), dots),
+      h("div",{class:"composer"},
+        menu, title, editor,
+        h("div",{class:"toolbar"},
+          tb(ICON.image,()=>fileInput.click()), tb(ICON.speaker,()=>wrap("")),
+          tb(ICON.bold,()=>wrap("**")), tb(ICON.italic,()=>wrap("_")),
+          tb(ICON.link,()=>{const u=prompt("Link URL");if(u){const s=editor.selectionStart,e=editor.selectionEnd,v=editor.value,txt=v.slice(s,e)||"link";editor.value=v.slice(0,s)+"["+txt+"]("+u+")"+v.slice(e);editor.dispatchEvent(new Event("input"));}}),
+          count, h("div",{class:"spacer"}),
+          h("button",{class:"btn secondary",onclick:()=>toast.textContent=preview(editor.value)},"Preview"),
+          h("button",{class:"btn primary",onclick:submit(false)},"Post")),
+        fileInput, toast));
+  }
+  function preview(md){return "Preview: "+md.replace(/\*\*(.*?)\*\*/g,"$1").replace(/_(.*?)_/g,"$1").slice(0,140);}
+
+  /* ---------------- posts ---------------- */
+  async function postsView(view){
+    view.append(h("h2",{class:"section"},"Posts"));
+    const sel=h("select",{onchange:()=>load(sel.value),style:"margin-bottom:14px;border:1px solid #dfe2e6;border-radius:8px;padding:7px 10px"},
+      ...["","published","draft","scheduled"].map(s=>h("option",{value:s},s||"all")));
+    const list=h("div"); view.append(sel,list);
+    async function load(status){
+      list.innerHTML="Loading…";
+      const {posts}=await (await api("/api/posts"+(status?"?status="+status:""))).json();
+      list.innerHTML="";
+      if(!posts.length){list.append(h("p",{style:"color:#8a9099"},"No posts."));return;}
+      for(const p of posts){
+        list.append(h("div",{class:"row"},
+          h("div",{}, h("span",{class:"tag"},p.post_type), h("span",{},p.title||p.slug),
+            h("div",{class:"meta"},p.status+" · "+(p.published_at||p.created_at))),
+          h("button",{class:"btn secondary",style:"padding:6px 12px;color:#d33",onclick:async()=>{if(confirm("Delete this post?")){await api("/api/posts/"+p.slug,{method:"DELETE"});load(sel.value);}}},"Delete")));
       }
-      if (!posts.length) list.textContent = "No posts.";
     }
     load("");
   }
 
-  // ---- Media ----
-  async function mediaView(view) {
-    const res = await api("/api/media");
-    const { media } = await res.json();
-    const grid = h("div", { class: "grid grid-cols-3 gap-2" });
-    for (const m of media) {
-      const cell = (m.mime_type||"").startsWith("image")
-        ? h("img", { src: m.url, class: "w-full h-28 object-cover rounded cursor-pointer", title: "click to copy" })
-        : h("div", { class: "border rounded p-2 text-xs break-all" }, m.filename);
-      cell.addEventListener("click", () => { navigator.clipboard.writeText(location.origin + m.url); cell.style.outline = "2px solid #111"; });
+  /* ---------------- media ---------------- */
+  async function mediaView(view){
+    view.append(h("h2",{class:"section"},"Uploads"));
+    const {media}=await (await api("/api/media")).json();
+    if(!media.length){view.append(h("p",{style:"color:#8a9099"},"No media yet."));return;}
+    const grid=h("div",{class:"grid"});
+    for(const m of media){
+      const cell=(m.mime_type||"").startsWith("image")?h("img",{src:m.url,title:"click to copy URL"}):h("div",{class:"card"},m.filename);
+      cell.addEventListener("click",()=>{navigator.clipboard.writeText(location.origin+m.url);cell.style.outline="2px solid var(--blue)";});
       grid.append(cell);
     }
-    view.append(grid.children.length ? grid : h("p", {}, "No media yet."));
+    view.append(grid);
   }
 
-  // ---- Mentions (webmentions + Bluesky/Mastodon replies, unified) ----
-  async function mentionsView(view) {
-    const reload = () => { view.innerHTML = ""; mentionsView(view); };
-    const res = await api("/api/mentions");
-    const { webmentions, social } = await res.json();
-
-    view.append(h("div", { class: "flex justify-between items-center mb-3" },
-      h("h2", { class: "font-bold" }, "Mentions"),
-      h("button", { class: "border px-3 py-1 rounded text-sm", onclick: async () => { await api("/api/mentions/poll", { method: "POST" }); reload(); } }, "↻ Poll replies")));
-
-    const icon = { bluesky: "🦋", mastodon: "🐘" };
-    if (social.length) view.append(h("h3", { class: "text-sm font-bold text-neutral-500 mt-2" }, "Replies"));
-    for (const s of social) {
-      const box = h("textarea", { rows: "2", placeholder: "Reply…", class: "border rounded px-2 py-1 w-full mt-2 text-sm" });
-      const status = h("span", { class: "text-xs text-green-700 ml-2" });
-      view.append(h("div", { class: "border-b py-2" },
-        h("div", { class: "text-sm" }, (icon[s.platform] || "") + " ",
-          h("a", { href: s.url || "#", target: "_blank", class: "underline" }, s.author || "someone"),
-          s.replied ? h("span", { class: "text-xs text-neutral-400 ml-2" }, "(replied)") : null),
-        h("div", { class: "text-sm text-neutral-700" }, s.content || ""),
-        box,
-        h("button", { class: "bg-neutral-900 text-white px-3 py-1 rounded text-sm mt-1", onclick: async () => {
-          const r = await api("/api/mentions/" + s.id + "/reply", { method: "POST", json: { text: box.value } });
-          if (r.ok) { status.textContent = "✓ sent"; } else { status.textContent = "✗ " + (await r.json()).error; }
-        } }, "Reply"), status));
+  /* ---------------- mentions ---------------- */
+  async function mentionsView(view){
+    const reload=()=>{view.innerHTML="";mentionsView(view);};
+    view.append(h("div",{style:"display:flex;align-items:center;justify-content:space-between"},
+      h("h2",{class:"section"},"Mentions"),
+      h("button",{class:"btn secondary",style:"padding:7px 14px",onclick:async()=>{await api("/api/mentions/poll",{method:"POST"});reload();}},"↻ Poll replies")));
+    const {webmentions,social}=await (await api("/api/mentions")).json();
+    const icon={bluesky:"🦋",mastodon:"🐘"};
+    if(social.length) view.append(h("h3",{class:"sub"},"Replies"));
+    for(const s of social){
+      const box=h("textarea",{class:"replybox",rows:"2",placeholder:"Reply…"});
+      const st=h("span",{style:"font-size:13px;margin-left:8px;color:#2a8a4a"});
+      view.append(h("div",{class:"card"},
+        h("div",{}, (icon[s.platform]||"")+" ", h("a",{href:s.url||"#",target:"_blank"},s.author||"someone"), s.replied?h("span",{style:"color:#8a9099;font-size:12px;margin-left:8px"},"(replied)"):null),
+        h("div",{style:"margin:6px 0;color:#3a3f45"},s.content||""), box,
+        h("div",{},h("button",{class:"btn primary",style:"padding:7px 14px;margin-top:6px",onclick:async()=>{const r=await api("/api/mentions/"+s.id+"/reply",{method:"POST",json:{text:box.value}});st.textContent=r.ok?"✓ sent":"✗ "+(await r.json()).error;}},"Reply"),st)));
     }
-
-    view.append(h("h3", { class: "text-sm font-bold text-neutral-500 mt-4" }, "Webmentions"));
-    if (!webmentions.length) view.append(h("p", { class: "text-sm text-neutral-400" }, "None yet."));
-    for (const w of webmentions) {
-      view.append(h("div", { class: "border-b py-2" },
-        h("div", { class: "text-sm" }, h("strong", {}, w.author_name || w.author_url || "Anon"), " — " + w.type),
-        h("div", { class: "text-sm text-neutral-600" }, w.content || w.source),
-        h("div", { class: "text-xs mt-1" },
-          w.status === "pending" ? h("span", {},
-            h("button", { class: "text-green-700 mr-2", onclick: async () => { await api("/api/webmentions/" + w.id, { method: "PATCH", json: { status: "approved" } }); reload(); } }, "approve"),
-            h("button", { class: "text-red-600", onclick: async () => { await api("/api/webmentions/" + w.id, { method: "PATCH", json: { status: "rejected" } }); reload(); } }, "reject"))
-          : h("span", { class: "text-neutral-400" }, w.status))));
+    view.append(h("h3",{class:"sub"},"Webmentions"));
+    if(!webmentions.length) view.append(h("p",{style:"color:#8a9099"},"None yet."));
+    for(const w of webmentions){
+      view.append(h("div",{class:"card"},
+        h("div",{},h("b",{},w.author_name||w.author_url||"Anon")," — "+w.type),
+        h("div",{style:"color:#586;margin:4px 0"},w.content||w.source),
+        w.status==="pending"?h("div",{},
+          h("button",{class:"btn secondary",style:"padding:6px 12px;color:#2a8a4a;margin-right:8px",onclick:async()=>{await api("/api/webmentions/"+w.id,{method:"PATCH",json:{status:"approved"}});reload();}},"Approve"),
+          h("button",{class:"btn secondary",style:"padding:6px 12px;color:#d33",onclick:async()=>{await api("/api/webmentions/"+w.id,{method:"PATCH",json:{status:"rejected"}});reload();}},"Reject"))
+        :h("span",{style:"color:#8a9099"},w.status)));
     }
   }
 
-  // ---- Settings (all controls) ----
-  async function settingsView(view) {
-    const cfg = await (await api("/api/config")).json();
-    const status = h("p", { class: "text-sm mt-2 text-green-700" });
-    const field = (label, el) => h("div", { class: "mb-2" }, h("label", { class: "text-xs text-neutral-500 block" }, label), el);
-    const inp = (val) => h("input", { class: "border rounded px-3 py-2 w-full", value: val ?? "" });
-    const chk = (val) => { const c = h("input", { type: "checkbox" }); c.checked = !!val; return c; };
+  /* ---------------- settings ---------------- */
+  async function settingsView(view){
+    const c=await (await api("/api/config")).json();
+    cfg=c;
+    const toast=h("div",{class:"toast"});
+    const f=(label,el)=>h("div",{class:"field"},h("label",{},label),el);
+    const inp=v=>h("input",{type:"text",value:v??""});
+    const chk=v=>{const x=h("input",{type:"checkbox"});x.checked=!!v;return x;};
 
-    // Site
-    const title = inp(cfg.site.title), desc = inp(cfg.site.description), author = inp(cfg.site.author), username = inp(cfg.site.username), url = inp(cfg.site.url);
-    // Feeds & webmentions
-    const perPage = inp(cfg.feeds.posts_per_page), inclReply = chk(cfg.feeds.include_reply_type);
-    const wmRecv = chk(cfg.webmentions.receive), wmSend = chk(cfg.webmentions.send), wmMod = chk(cfg.webmentions.moderation);
-    // Crossposting
-    const bsEnabled = chk(cfg.crossposting.bluesky.enabled), bsHandle = inp(cfg.crossposting.bluesky.handle);
-    const mEnabled = chk(cfg.crossposting.mastodon.enabled), mInst = inp(cfg.crossposting.mastodon.instance_url);
-    const pingEnabled = chk(cfg.microblog.ping_enabled);
-    // Theme
-    const themeData = await (await api("/api/themes")).json();
-    const themeSel = h("select", { class: "border rounded px-2 py-1" },
-      h("option", { value: "" }, "(default)"),
-      ...themeData.themes.map(t => { const o = h("option", { value: t }, t); if (t === themeData.active) o.selected = true; return o; }));
+    const title=inp(c.site.title),desc=inp(c.site.description),author=inp(c.site.author),username=inp(c.site.username),url=inp(c.site.url);
+    const perPage=inp(c.feeds.posts_per_page),inclReply=chk(c.feeds.include_reply_type);
+    const wmRecv=chk(c.webmentions.receive),wmSend=chk(c.webmentions.send),wmMod=chk(c.webmentions.moderation);
+    const bsEnabled=chk(c.crossposting.bluesky.enabled),bsHandle=inp(c.crossposting.bluesky.handle);
+    const mEnabled=chk(c.crossposting.mastodon.enabled),mInst=inp(c.crossposting.mastodon.instance_url);
+    const ping=chk(c.microblog.ping_enabled);
+    const themes=await (await api("/api/themes")).json();
+    const themeSel=h("select",{},h("option",{value:""},"(default)"),...themes.themes.map(t=>{const o=h("option",{value:t},t);if(t===themes.active)o.selected=true;return o;}));
+    const bs=await (await api("/api/oauth/bluesky")).json();
+    const ma=await (await api("/api/oauth/mastodon")).json();
 
-    const save = async () => {
-      await api("/api/config", { method: "PUT", json: {
-        site: { title: title.value, description: desc.value, author: author.value, username: username.value, url: url.value },
-        feeds: { posts_per_page: Number(perPage.value), include_reply_type: inclReply.checked },
-        webmentions: { receive: wmRecv.checked, send: wmSend.checked, moderation: wmMod.checked },
-        crossposting: { bluesky: { enabled: bsEnabled.checked, handle: bsHandle.value }, mastodon: { enabled: mEnabled.checked, instance_url: mInst.value } },
-        microblog: { ping_enabled: pingEnabled.checked },
-        hugo: { theme: themeSel.value },
-      }});
-      status.textContent = "✓ Saved — rebuild to apply.";
+    const save=async()=>{
+      await api("/api/config",{method:"PUT",json:{
+        site:{title:title.value,description:desc.value,author:author.value,username:username.value,url:url.value},
+        feeds:{posts_per_page:Number(perPage.value),include_reply_type:inclReply.checked},
+        webmentions:{receive:wmRecv.checked,send:wmSend.checked,moderation:wmMod.checked},
+        crossposting:{bluesky:{enabled:bsEnabled.checked,handle:bsHandle.value},mastodon:{enabled:mEnabled.checked,instance_url:mInst.value}},
+        microblog:{ping_enabled:ping.checked}, hugo:{theme:themeSel.value}}});
+      toast.textContent="✓ Saved — rebuild to apply.";
     };
+    const reload=()=>{view.innerHTML="";settingsView(view);};
 
-    const bs = await (await api("/api/oauth/bluesky")).json();
-    const ma = await (await api("/api/oauth/mastodon")).json();
-
-    view.append(
-      h("h2", { class: "font-bold mb-2" }, "Site"),
-      field("Title", title), field("Description", desc), field("Author", author), field("Username (rel-me / webfinger)", username), field("Public URL", url),
-      h("h2", { class: "font-bold mb-2 mt-4" }, "Feeds"),
-      field("Posts per page", perPage),
-      h("label", { class: "text-sm flex items-center gap-2 mb-3" }, inclReply, "Include replies in main feed"),
-      h("h2", { class: "font-bold mb-2 mt-4" }, "Webmentions"),
-      h("label", { class: "text-sm flex items-center gap-2" }, wmRecv, "Receive"),
-      h("label", { class: "text-sm flex items-center gap-2" }, wmSend, "Send"),
-      h("label", { class: "text-sm flex items-center gap-2 mb-3" }, wmMod, "Hold for moderation"),
-
-      h("h2", { class: "font-bold mb-2 mt-4" }, "Cross-posting"),
-      h("label", { class: "text-sm flex items-center gap-2" }, bsEnabled, "Bluesky enabled"),
-      field("Bluesky handle", bsHandle),
-      h("p", { class: "text-sm mb-3" }, bs.connected
-        ? h("span", {}, "✓ Connected as " + (bs.handle || "?") + " ", h("button", { class: "text-red-600 ml-2", onclick: async () => { await api("/api/oauth/bluesky/disconnect", { method: "POST" }); settingsReload(view); } }, "disconnect"))
-        : h("a", { href: "/oauth/bluesky/connect", class: "underline" }, "Connect Bluesky →")),
-      h("label", { class: "text-sm flex items-center gap-2" }, mEnabled, "Mastodon enabled"),
-      field("Mastodon instance", mInst),
-      h("p", { class: "text-sm mb-3" }, ma.connected
-        ? h("span", {}, "✓ Connected (" + (ma.instance || "?") + ") ", h("button", { class: "text-red-600 ml-2", onclick: async () => { await api("/api/oauth/mastodon/disconnect", { method: "POST" }); settingsReload(view); } }, "disconnect"))
-        : h("button", { class: "border px-2 py-1 rounded", onclick: () => { location.href = "/oauth/mastodon/connect?instance=" + encodeURIComponent(mInst.value); } }, "Connect Mastodon")),
-      h("label", { class: "text-sm flex items-center gap-2 mb-3" }, pingEnabled, "Ping Micro.blog on publish"),
-
-      h("h2", { class: "font-bold mb-2 mt-4" }, "Theme"),
-      field("Active theme (drop themes into hugo-site/themes/)", themeSel),
-
-      h("button", { class: "bg-neutral-900 text-white px-4 py-2 rounded mt-4", onclick: save }, "Save settings"),
-
-      h("h2", { class: "font-bold mb-2 mt-6" }, "Security"),
-      passwordChanger(),
-
-      h("h2", { class: "font-bold mb-2 mt-6" }, "Backup & Build"),
-      h("div", { class: "flex gap-2 flex-wrap" },
-        h("button", { class: "border px-4 py-2 rounded", onclick: async () => {
-          const r = await fetch(API + "/api/backup", { headers: { Authorization: "Bearer " + token } });
-          const blob = await r.blob(); const a = document.createElement("a");
-          a.href = URL.createObjectURL(blob); a.download = (r.headers.get("content-disposition")||"backup.tar.gz").split("filename=")[1]?.replaceAll('"','') || "macroblog-backup.tar.gz"; a.click();
-        } }, "⬇ Download backup"),
-        h("button", { class: "border px-4 py-2 rounded", onclick: async () => { status.textContent = "Building…"; const s = await (await api("/api/hugo/build", { method: "POST" })).json(); status.textContent = s.lastSuccess ? "✓ Built in " + s.durationMs + "ms" : "Build failed"; } }, "Rebuild site")),
-      status);
+    view.append(h("h2",{class:"section"},"Settings"),
+      h("h3",{class:"sub"},"Site"),
+      f("Title",title),f("Description",desc),f("Author",author),f("Username",username),f("Public URL",url),
+      h("h3",{class:"sub"},"Feeds"), f("Posts per page",perPage), h("label",{class:"ck"},inclReply,"Include replies in main feed"),
+      h("h3",{class:"sub"},"Webmentions"),
+      h("label",{class:"ck"},wmRecv,"Receive"),h("label",{class:"ck"},wmSend,"Send"),h("label",{class:"ck"},wmMod,"Hold for moderation"),
+      h("h3",{class:"sub"},"Cross-posting"),
+      h("label",{class:"ck"},bsEnabled,"Bluesky enabled"), f("Bluesky handle",bsHandle),
+      h("div",{class:"field"}, bs.connected
+        ? h("span",{},"✓ Connected as "+(bs.handle||"?")+" ",h("a",{href:"#",style:"color:#d33",onclick:async e=>{e.preventDefault();await api("/api/oauth/bluesky/disconnect",{method:"POST"});reload();}},"disconnect"))
+        : h("a",{href:"/oauth/bluesky/connect"},"Connect Bluesky →")),
+      h("label",{class:"ck"},mEnabled,"Mastodon enabled"), f("Mastodon instance",mInst),
+      h("div",{class:"field"}, ma.connected
+        ? h("span",{},"✓ Connected ("+(ma.instance||"?")+") ",h("a",{href:"#",style:"color:#d33",onclick:async e=>{e.preventDefault();await api("/api/oauth/mastodon/disconnect",{method:"POST"});reload();}},"disconnect"))
+        : h("button",{class:"btn secondary",style:"padding:8px 14px",onclick:()=>location.href="/oauth/mastodon/connect?instance="+encodeURIComponent(mInst.value)},"Connect Mastodon")),
+      h("label",{class:"ck"},ping,"Ping Micro.blog on publish"),
+      h("h3",{class:"sub"},"Theme"), f("Active theme (drop into hugo-site/themes/)",themeSel),
+      h("button",{class:"btn primary",style:"margin-top:6px",onclick:save},"Save settings"),
+      h("h3",{class:"sub"},"Security"), passwordChanger(),
+      h("h3",{class:"sub"},"Backup & build"),
+      h("div",{style:"display:flex;gap:10px;flex-wrap:wrap"},
+        h("button",{class:"btn secondary",onclick:async()=>{const r=await fetch(API+"/api/backup",{headers:{Authorization:"Bearer "+token}});const b=await r.blob();const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="macroblog-backup.tar.gz";a.click();}},"⬇ Download backup"),
+        h("button",{class:"btn secondary",onclick:async()=>{toast.textContent="Building…";const s=await (await api("/api/hugo/build",{method:"POST"})).json();toast.textContent=s.lastSuccess?"✓ Built in "+s.durationMs+"ms":"Build failed";}},"Rebuild site")),
+      toast);
+  }
+  function passwordChanger(){
+    const pw=h("input",{type:"password",placeholder:"New password",style:"max-width:280px;border:1px solid #dfe2e6;border-radius:9px;padding:10px 12px;font-size:15px"});
+    const msg=h("span",{style:"font-size:13px;margin-left:8px"});
+    return h("div",{style:"display:flex;align-items:center;gap:8px"},pw,
+      h("button",{class:"btn secondary",style:"padding:9px 14px",onclick:async()=>{const r=await api("/api/password",{method:"PUT",json:{password:pw.value}});msg.textContent=r.ok?"✓ changed":"✗ "+(await r.json()).error;pw.value="";}},"Change"),msg);
   }
 
-  function settingsReload(view) { view.innerHTML = ""; settingsView(view); }
-
-  function passwordChanger() {
-    const pw = h("input", { type: "password", placeholder: "New password", class: "border rounded px-3 py-2" });
-    const msg = h("span", { class: "text-xs ml-2" });
-    return h("div", { class: "flex items-center" }, pw,
-      h("button", { class: "border px-3 py-2 rounded ml-2", onclick: async () => {
-        const r = await api("/api/password", { method: "PUT", json: { password: pw.value } });
-        msg.textContent = r.ok ? "✓ changed" : "✗ " + (await r.json()).error; pw.value = "";
-      } }, "Change password"), msg);
-  }
-
-  // boot
-  if (token) renderApp(); else renderLogin();
+  boot();
   </script>
 </body>
 </html>
