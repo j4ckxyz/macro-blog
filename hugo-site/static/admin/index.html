@@ -171,46 +171,138 @@
     view.append(grid.children.length ? grid : h("p", {}, "No media yet."));
   }
 
-  // ---- Mentions ----
+  // ---- Mentions (webmentions + Bluesky/Mastodon replies, unified) ----
   async function mentionsView(view) {
-    const res = await api("/api/webmentions");
-    const { webmentions } = await res.json();
-    if (!webmentions.length) { view.append(h("p", {}, "No webmentions.")); return; }
+    const reload = () => { view.innerHTML = ""; mentionsView(view); };
+    const res = await api("/api/mentions");
+    const { webmentions, social } = await res.json();
+
+    view.append(h("div", { class: "flex justify-between items-center mb-3" },
+      h("h2", { class: "font-bold" }, "Mentions"),
+      h("button", { class: "border px-3 py-1 rounded text-sm", onclick: async () => { await api("/api/mentions/poll", { method: "POST" }); reload(); } }, "↻ Poll replies")));
+
+    const icon = { bluesky: "🦋", mastodon: "🐘" };
+    if (social.length) view.append(h("h3", { class: "text-sm font-bold text-neutral-500 mt-2" }, "Replies"));
+    for (const s of social) {
+      const box = h("textarea", { rows: "2", placeholder: "Reply…", class: "border rounded px-2 py-1 w-full mt-2 text-sm" });
+      const status = h("span", { class: "text-xs text-green-700 ml-2" });
+      view.append(h("div", { class: "border-b py-2" },
+        h("div", { class: "text-sm" }, (icon[s.platform] || "") + " ",
+          h("a", { href: s.url || "#", target: "_blank", class: "underline" }, s.author || "someone"),
+          s.replied ? h("span", { class: "text-xs text-neutral-400 ml-2" }, "(replied)") : null),
+        h("div", { class: "text-sm text-neutral-700" }, s.content || ""),
+        box,
+        h("button", { class: "bg-neutral-900 text-white px-3 py-1 rounded text-sm mt-1", onclick: async () => {
+          const r = await api("/api/mentions/" + s.id + "/reply", { method: "POST", json: { text: box.value } });
+          if (r.ok) { status.textContent = "✓ sent"; } else { status.textContent = "✗ " + (await r.json()).error; }
+        } }, "Reply"), status));
+    }
+
+    view.append(h("h3", { class: "text-sm font-bold text-neutral-500 mt-4" }, "Webmentions"));
+    if (!webmentions.length) view.append(h("p", { class: "text-sm text-neutral-400" }, "None yet."));
     for (const w of webmentions) {
       view.append(h("div", { class: "border-b py-2" },
         h("div", { class: "text-sm" }, h("strong", {}, w.author_name || w.author_url || "Anon"), " — " + w.type),
         h("div", { class: "text-sm text-neutral-600" }, w.content || w.source),
         h("div", { class: "text-xs mt-1" },
           w.status === "pending" ? h("span", {},
-            h("button", { class: "text-green-700 mr-2", onclick: async () => { await api("/api/webmentions/" + w.id, { method: "PATCH", json: { status: "approved" } }); mentionsView(view.replaceChildren()||view); } }, "approve"),
-            h("button", { class: "text-red-600", onclick: async () => { await api("/api/webmentions/" + w.id, { method: "PATCH", json: { status: "rejected" } }); view.innerHTML=""; mentionsView(view); } }, "reject"))
+            h("button", { class: "text-green-700 mr-2", onclick: async () => { await api("/api/webmentions/" + w.id, { method: "PATCH", json: { status: "approved" } }); reload(); } }, "approve"),
+            h("button", { class: "text-red-600", onclick: async () => { await api("/api/webmentions/" + w.id, { method: "PATCH", json: { status: "rejected" } }); reload(); } }, "reject"))
           : h("span", { class: "text-neutral-400" }, w.status))));
     }
   }
 
-  // ---- Settings ----
+  // ---- Settings (all controls) ----
   async function settingsView(view) {
-    const res = await api("/api/config");
-    const cfg = await res.json();
-    const title = h("input", { class: "border rounded px-3 py-2 w-full mb-2", value: cfg.site.title });
-    const desc = h("input", { class: "border rounded px-3 py-2 w-full mb-2", value: cfg.site.description });
-    const status = h("p", { class: "text-sm mt-2" });
+    const cfg = await (await api("/api/config")).json();
+    const status = h("p", { class: "text-sm mt-2 text-green-700" });
+    const field = (label, el) => h("div", { class: "mb-2" }, h("label", { class: "text-xs text-neutral-500 block" }, label), el);
+    const inp = (val) => h("input", { class: "border rounded px-3 py-2 w-full", value: val ?? "" });
+    const chk = (val) => { const c = h("input", { type: "checkbox" }); c.checked = !!val; return c; };
+
+    // Site
+    const title = inp(cfg.site.title), desc = inp(cfg.site.description), author = inp(cfg.site.author), username = inp(cfg.site.username), url = inp(cfg.site.url);
+    // Feeds & webmentions
+    const perPage = inp(cfg.feeds.posts_per_page), inclReply = chk(cfg.feeds.include_reply_type);
+    const wmRecv = chk(cfg.webmentions.receive), wmSend = chk(cfg.webmentions.send), wmMod = chk(cfg.webmentions.moderation);
+    // Crossposting
+    const bsEnabled = chk(cfg.crossposting.bluesky.enabled), bsHandle = inp(cfg.crossposting.bluesky.handle);
+    const mEnabled = chk(cfg.crossposting.mastodon.enabled), mInst = inp(cfg.crossposting.mastodon.instance_url);
+    const pingEnabled = chk(cfg.microblog.ping_enabled);
+    // Theme
+    const themeData = await (await api("/api/themes")).json();
+    const themeSel = h("select", { class: "border rounded px-2 py-1" },
+      h("option", { value: "" }, "(default)"),
+      ...themeData.themes.map(t => { const o = h("option", { value: t }, t); if (t === themeData.active) o.selected = true; return o; }));
+
+    const save = async () => {
+      await api("/api/config", { method: "PUT", json: {
+        site: { title: title.value, description: desc.value, author: author.value, username: username.value, url: url.value },
+        feeds: { posts_per_page: Number(perPage.value), include_reply_type: inclReply.checked },
+        webmentions: { receive: wmRecv.checked, send: wmSend.checked, moderation: wmMod.checked },
+        crossposting: { bluesky: { enabled: bsEnabled.checked, handle: bsHandle.value }, mastodon: { enabled: mEnabled.checked, instance_url: mInst.value } },
+        microblog: { ping_enabled: pingEnabled.checked },
+        hugo: { theme: themeSel.value },
+      }});
+      status.textContent = "✓ Saved — rebuild to apply.";
+    };
+
+    const bs = await (await api("/api/oauth/bluesky")).json();
+    const ma = await (await api("/api/oauth/mastodon")).json();
+
     view.append(
       h("h2", { class: "font-bold mb-2" }, "Site"),
-      h("label", { class: "text-xs text-neutral-500" }, "Title"), title,
-      h("label", { class: "text-xs text-neutral-500" }, "Description"), desc,
-      h("button", { class: "bg-neutral-900 text-white px-4 py-2 rounded mb-6", onclick: async () => {
-        await api("/api/config", { method: "PUT", json: { site: { title: title.value, description: desc.value } } });
-        status.textContent = "✓ Saved (rebuild to apply)";
-      } }, "Save"),
+      field("Title", title), field("Description", desc), field("Author", author), field("Username (rel-me / webfinger)", username), field("Public URL", url),
+      h("h2", { class: "font-bold mb-2 mt-4" }, "Feeds"),
+      field("Posts per page", perPage),
+      h("label", { class: "text-sm flex items-center gap-2 mb-3" }, inclReply, "Include replies in main feed"),
+      h("h2", { class: "font-bold mb-2 mt-4" }, "Webmentions"),
+      h("label", { class: "text-sm flex items-center gap-2" }, wmRecv, "Receive"),
+      h("label", { class: "text-sm flex items-center gap-2" }, wmSend, "Send"),
+      h("label", { class: "text-sm flex items-center gap-2 mb-3" }, wmMod, "Hold for moderation"),
+
       h("h2", { class: "font-bold mb-2 mt-4" }, "Cross-posting"),
-      h("p", { class: "text-sm mb-2" }, h("a", { href: "/oauth/bluesky/connect", class: "underline" }, "Connect Bluesky →")),
-      h("p", { class: "text-sm mb-4" }, "Mastodon instance: ",
-        h("input", { id: "minst", placeholder: "https://mastodon.social", class: "border rounded px-2 py-1", value: cfg.crossposting.mastodon.instance_url || "" }),
-        h("button", { class: "border px-2 py-1 rounded ml-2", onclick: () => { const i = document.getElementById("minst").value; location.href = "/oauth/mastodon/connect?instance=" + encodeURIComponent(i); } }, "Connect")),
-      h("h2", { class: "font-bold mb-2 mt-4" }, "Build"),
-      h("button", { class: "border px-4 py-2 rounded", onclick: async () => { status.textContent = "Building…"; const r = await api("/api/hugo/build", { method: "POST" }); const s = await r.json(); status.textContent = s.lastSuccess ? "✓ Built in " + s.durationMs + "ms" : "Build failed"; } }, "Rebuild site"),
+      h("label", { class: "text-sm flex items-center gap-2" }, bsEnabled, "Bluesky enabled"),
+      field("Bluesky handle", bsHandle),
+      h("p", { class: "text-sm mb-3" }, bs.connected
+        ? h("span", {}, "✓ Connected as " + (bs.handle || "?") + " ", h("button", { class: "text-red-600 ml-2", onclick: async () => { await api("/api/oauth/bluesky/disconnect", { method: "POST" }); settingsReload(view); } }, "disconnect"))
+        : h("a", { href: "/oauth/bluesky/connect", class: "underline" }, "Connect Bluesky →")),
+      h("label", { class: "text-sm flex items-center gap-2" }, mEnabled, "Mastodon enabled"),
+      field("Mastodon instance", mInst),
+      h("p", { class: "text-sm mb-3" }, ma.connected
+        ? h("span", {}, "✓ Connected (" + (ma.instance || "?") + ") ", h("button", { class: "text-red-600 ml-2", onclick: async () => { await api("/api/oauth/mastodon/disconnect", { method: "POST" }); settingsReload(view); } }, "disconnect"))
+        : h("button", { class: "border px-2 py-1 rounded", onclick: () => { location.href = "/oauth/mastodon/connect?instance=" + encodeURIComponent(mInst.value); } }, "Connect Mastodon")),
+      h("label", { class: "text-sm flex items-center gap-2 mb-3" }, pingEnabled, "Ping Micro.blog on publish"),
+
+      h("h2", { class: "font-bold mb-2 mt-4" }, "Theme"),
+      field("Active theme (drop themes into hugo-site/themes/)", themeSel),
+
+      h("button", { class: "bg-neutral-900 text-white px-4 py-2 rounded mt-4", onclick: save }, "Save settings"),
+
+      h("h2", { class: "font-bold mb-2 mt-6" }, "Security"),
+      passwordChanger(),
+
+      h("h2", { class: "font-bold mb-2 mt-6" }, "Backup & Build"),
+      h("div", { class: "flex gap-2 flex-wrap" },
+        h("button", { class: "border px-4 py-2 rounded", onclick: async () => {
+          const r = await fetch(API + "/api/backup", { headers: { Authorization: "Bearer " + token } });
+          const blob = await r.blob(); const a = document.createElement("a");
+          a.href = URL.createObjectURL(blob); a.download = (r.headers.get("content-disposition")||"backup.tar.gz").split("filename=")[1]?.replaceAll('"','') || "macroblog-backup.tar.gz"; a.click();
+        } }, "⬇ Download backup"),
+        h("button", { class: "border px-4 py-2 rounded", onclick: async () => { status.textContent = "Building…"; const s = await (await api("/api/hugo/build", { method: "POST" })).json(); status.textContent = s.lastSuccess ? "✓ Built in " + s.durationMs + "ms" : "Build failed"; } }, "Rebuild site")),
       status);
+  }
+
+  function settingsReload(view) { view.innerHTML = ""; settingsView(view); }
+
+  function passwordChanger() {
+    const pw = h("input", { type: "password", placeholder: "New password", class: "border rounded px-3 py-2" });
+    const msg = h("span", { class: "text-xs ml-2" });
+    return h("div", { class: "flex items-center" }, pw,
+      h("button", { class: "border px-3 py-2 rounded ml-2", onclick: async () => {
+        const r = await api("/api/password", { method: "PUT", json: { password: pw.value } });
+        msg.textContent = r.ok ? "✓ changed" : "✗ " + (await r.json()).error; pw.value = "";
+      } }, "Change password"), msg);
   }
 
   // boot

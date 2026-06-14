@@ -21,6 +21,26 @@ async function main() {
     return;
   }
 
+  if (args.includes("--backup")) {
+    const { createBackup } = await import("./services/backup.ts");
+    const file = await createBackup();
+    console.log("✓ Backup written to", file);
+    return;
+  }
+
+  if (args.includes("--restore")) {
+    const idx = args.indexOf("--restore");
+    const file = args[idx + 1];
+    if (!file) {
+      console.error("Usage: bun run macroblog --restore <backup.tar.gz>");
+      process.exit(1);
+    }
+    const { restoreBackup } = await import("./services/backup.ts");
+    await restoreBackup(file);
+    console.log("✓ Restored from", file, "— restart Macroblog and rebuild.");
+    return;
+  }
+
   if (args.includes("--gen-secret")) {
     const secret = randomToken(48);
     saveConfig({ auth: { session_secret: secret } as any });
@@ -50,6 +70,8 @@ Usage:
   bun run macroblog --set-password    Set the IndieAuth login password
   bun run macroblog --gen-secret      Generate and store a session secret
   bun run macroblog --migrate         Run database migrations
+  bun run macroblog --backup          Create a backup archive (backups/)
+  bun run macroblog --restore <file>  Restore from a backup archive
 
 Config: ${CONFIG_PATH}`);
 }

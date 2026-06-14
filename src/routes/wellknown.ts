@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { getConfig } from "../lib/config.ts";
+import { getConfig, baseUrl } from "../lib/config.ts";
 
 export const wellknown = new Hono();
 
@@ -13,7 +13,7 @@ wellknown.get("/webfinger", (c) => {
   const resource = c.req.query("resource") ?? "";
   const host = siteHost();
   const acct = `acct:${cfg.site.username}@${host}`;
-  const site = cfg.site.url.replace(/\/+$/, "/");
+  const site = baseUrl(cfg);
 
   // Accept acct:user@host or the site URL itself.
   const matchesAcct = resource === acct || resource === `acct:${host}`;
@@ -39,7 +39,7 @@ wellknown.get("/webfinger", (c) => {
 
 // host-meta — XRD pointing at the webfinger endpoint.
 wellknown.get("/host-meta", (c) => {
-  const site = getConfig().site.url.replace(/\/+$/, "/");
+  const site = baseUrl();
   const xrd = `<?xml version="1.0" encoding="UTF-8"?>
 <XRD xmlns="http://docs.oasis-open.org/ns/xri/xrd-1.0">
   <Link rel="lrdd" type="application/jrd+json" template="${site}.well-known/webfinger?resource={uri}" />
@@ -49,7 +49,7 @@ wellknown.get("/host-meta", (c) => {
 
 // NodeInfo discovery + 2.1 document describing this as "blog" software.
 wellknown.get("/nodeinfo", (c) => {
-  const site = getConfig().site.url.replace(/\/+$/, "/");
+  const site = baseUrl();
   return c.json({
     links: [
       { rel: "http://nodeinfo.diaspora.software/ns/schema/2.1", href: `${site}.well-known/nodeinfo/2.1` },

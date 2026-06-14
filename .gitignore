@@ -8,3 +8,8 @@ hugo-site/resources/
 hugo-site/.hugo_build.lock
 uploads/*
 !uploads/.gitkeep
+.test-sandbox/
+backups/
+hugo-site/data/webmentions/*.json
+hugo-site/data/replies/*.json
+macroblog.config.yaml

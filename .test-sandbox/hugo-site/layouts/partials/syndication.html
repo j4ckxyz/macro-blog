@@ -1,8 +1,0 @@
-{{- /* u-syndication links for a post's cross-posted copies. */ -}}
-{{ with .Params.syndication }}
-<div class="syndication">
-  {{ range . }}
-  <a class="u-syndication" rel="syndication" href="{{ . }}">{{ . }}</a>
-  {{ end }}
-</div>
-{{ end }}

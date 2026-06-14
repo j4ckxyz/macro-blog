@@ -1,5 +1,0 @@
-{{- /* Author h-card used inside h-entry markup. */ -}}
-<div class="p-author h-card author">
-  {{ with .Site.Params.avatar }}<img class="u-photo" src="{{ . }}" alt="{{ $.Site.Params.author.name }}" width="48" height="48" />{{ end }}
-  <a class="p-name u-url" href="{{ .Site.BaseURL }}">{{ .Site.Params.author.name }}</a>
-</div>

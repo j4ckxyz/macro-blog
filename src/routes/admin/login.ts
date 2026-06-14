@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { getConfig } from "../../lib/config.ts";
+import { getConfig, baseUrl } from "../../lib/config.ts";
 import { verifyPassword, issueToken } from "../../lib/indieauth.ts";
 
 /**
@@ -16,7 +16,7 @@ adminLogin.post("/", async (c) => {
   const ok = await verifyPassword(password, cfg.auth.password_hash);
   if (!ok) return c.json({ error: "invalid_password" }, 401);
 
-  const me = cfg.site.url.replace(/\/+$/, "/");
+  const me = baseUrl(cfg);
   const token = issueToken({ clientId: `${me}admin/`, scope: "create update delete media", me });
   return c.json({ access_token: token, token_type: "Bearer", scope: "create update delete media", me });
 });

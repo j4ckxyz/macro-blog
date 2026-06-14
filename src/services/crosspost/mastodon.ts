@@ -88,6 +88,29 @@ export async function crosspostMastodon(
   return { remoteId: json.id, remoteUrl: json.url || json.uri };
 }
 
+/** Post a reply to a Mastodon status (used by the unified Mentions tab). */
+export async function replyMastodon(
+  inReplyToId: string,
+  text: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ id: string; url: string }> {
+  const cfg = getConfig();
+  const base = instanceUrl();
+  const res = await fetchImpl(`${base}/api/v1/statuses`, {
+    method: "POST",
+    headers: { Authorization: authHeader(), "content-type": "application/json" },
+    body: JSON.stringify({
+      status: text,
+      in_reply_to_id: inReplyToId,
+      visibility: "public",
+      language: cfg.site.language || "en",
+    }),
+  });
+  if (!res.ok) throw new Error(`mastodon reply failed: ${res.status} ${await res.text()}`);
+  const json = (await res.json()) as { id: string; url: string };
+  return { id: json.id, url: json.url };
+}
+
 /** Fetch replies to a syndicated status via the context endpoint. */
 export async function fetchMastodonReplies(statusId: string): Promise<any[]> {
   const base = instanceUrl();

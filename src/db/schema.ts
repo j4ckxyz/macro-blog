@@ -104,6 +104,27 @@ CREATE TABLE IF NOT EXISTS webmention_queue (
   UNIQUE(source, target)
 );
 
+-- Replies fetched from cross-posting platforms (Bluesky / Mastodon), unified
+-- with webmentions in the admin "Mentions" tab so they can be answered in one place.
+CREATE TABLE IF NOT EXISTS social_replies (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  platform TEXT NOT NULL,              -- bluesky, mastodon
+  post_slug TEXT,
+  remote_id TEXT NOT NULL,             -- status id (mastodon) or at:// uri (bluesky)
+  remote_cid TEXT,                     -- bluesky cid (needed to reply)
+  root_id TEXT,                        -- bluesky thread root uri
+  root_cid TEXT,
+  author TEXT,
+  author_url TEXT,
+  avatar TEXT,
+  content TEXT,
+  url TEXT,
+  published TEXT,
+  replied INTEGER DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(platform, remote_id)
+);
+
 -- Uploaded media
 CREATE TABLE IF NOT EXISTS media (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -210,6 +231,24 @@ export interface WebmentionQueueRow {
   status: string;
   attempts: number;
   last_attempt: string | null;
+  created_at: string;
+}
+
+export interface SocialReplyRow {
+  id: number;
+  platform: string;
+  post_slug: string | null;
+  remote_id: string;
+  remote_cid: string | null;
+  root_id: string | null;
+  root_cid: string | null;
+  author: string | null;
+  author_url: string | null;
+  avatar: string | null;
+  content: string | null;
+  url: string | null;
+  published: string | null;
+  replied: number;
   created_at: string;
 }
 
