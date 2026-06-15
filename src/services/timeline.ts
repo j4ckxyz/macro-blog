@@ -11,6 +11,28 @@ export interface TimelineMedia {
   alt?: string;
 }
 
+export interface TimelineEmbedLink {
+  type: "link";
+  uri: string;
+  title: string;
+  description: string;
+  thumb?: string | null;
+}
+
+export interface TimelineEmbedQuote {
+  type: "quote";
+  uri: string;
+  author: string;
+  authorHandle: string;
+  avatar: string;
+  content: string;
+  createdAt: string;
+  url?: string;
+  media?: TimelineMedia[] | null;
+}
+
+export type TimelineEmbed = TimelineEmbedLink | TimelineEmbedQuote;
+
 export interface NormalizedTimelineItem {
   platform: "bluesky" | "mastodon";
   remoteId: string;
@@ -26,6 +48,7 @@ export interface NormalizedTimelineItem {
   repostedBy?: string | null;
   createdAt: string; // ISO
   isReply?: boolean;
+  embed?: TimelineEmbed | null;
 }
 
 const MAX_ITEMS = 2000;
@@ -33,18 +56,20 @@ const MAX_ITEMS = 2000;
 function upsert(db: Database, item: NormalizedTimelineItem): void {
   db.query(
     `INSERT INTO timeline
-      (platform, remote_id, remote_cid, root_uri, root_cid, author_name, author_handle, author_avatar, author_url, content, url, media_json, reposted_by, created_at, is_reply, fetched_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      (platform, remote_id, remote_cid, root_uri, root_cid, author_name, author_handle, author_avatar, author_url, content, url, media_json, reposted_by, created_at, is_reply, embed_json, fetched_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
      ON CONFLICT(platform, remote_id) DO UPDATE SET
        content = excluded.content, author_avatar = excluded.author_avatar,
        reposted_by = excluded.reposted_by, is_reply = excluded.is_reply, 
        remote_cid = excluded.remote_cid, root_uri = excluded.root_uri, 
-       root_cid = excluded.root_cid, fetched_at = CURRENT_TIMESTAMP`,
+       root_cid = excluded.root_cid, embed_json = excluded.embed_json,
+       fetched_at = CURRENT_TIMESTAMP`,
   ).run(
     item.platform, item.remoteId, item.remoteCid ?? null, item.rootUri ?? null, item.rootCid ?? null,
     item.author, item.authorHandle, item.avatar,
     item.url, item.content, item.url, JSON.stringify(item.media || []),
     item.repostedBy ?? null, item.createdAt, item.isReply ? 1 : 0,
+    item.embed ? JSON.stringify(item.embed) : null,
   );
 }
 
@@ -137,5 +162,6 @@ export function getTimeline(limit = 100, q?: string, db: Database = getDb()): Ti
     repostedBy: r.reposted_by,
     createdAt: r.created_at || "",
     isReply: !!r.is_reply,
+    embed: r.embed_json ? JSON.parse(r.embed_json) : null,
   }));
 }

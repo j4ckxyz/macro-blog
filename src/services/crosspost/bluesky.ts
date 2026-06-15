@@ -493,6 +493,52 @@ export async function fetchBlueskyTimeline(limit = 50): Promise<NormalizedTimeli
       ? entry.reason?.by?.displayName || entry.reason?.by?.handle
       : null;
     const isReply = !!entry.reply;
+
+    let embed: any = null;
+    const embedObj = p.embed;
+    if (embedObj) {
+      const type = embedObj.$type;
+      if (type === "app.bsky.embed.external#view") {
+        if (embedObj.external) {
+          embed = {
+            type: "link",
+            uri: embedObj.external.uri,
+            title: embedObj.external.title || "",
+            description: embedObj.external.description || "",
+            thumb: embedObj.external.thumb || null,
+          };
+        }
+      } else if (
+        type === "app.bsky.embed.record#view" ||
+        type === "app.bsky.embed.recordWithMedia#view"
+      ) {
+        const recordView = type === "app.bsky.embed.recordWithMedia#view"
+          ? embedObj.record?.record
+          : embedObj.record;
+
+        if (recordView && recordView.$type === "app.bsky.embed.record#viewRecord") {
+          const recHandle = recordView.author?.handle;
+          const recRkey = (recordView.uri as string).split("/").pop();
+          const recMedia = (recordView.embeds?.[0]?.images || recordView.embeds?.[0]?.media?.images || []).map((im: any) => ({
+            url: im.fullsize || im.thumb || "",
+            alt: im.alt || "",
+          }));
+
+          embed = {
+            type: "quote",
+            uri: recordView.uri,
+            author: recordView.author?.displayName || recHandle || "",
+            authorHandle: recHandle ? "@" + recHandle : "",
+            avatar: recordView.author?.avatar || "",
+            content: recordView.value?.text || "",
+            createdAt: recordView.value?.createdAt || recordView.indexedAt || "",
+            url: recHandle ? `https://bsky.app/profile/${recHandle}/post/${recRkey}` : "",
+            media: recMedia,
+          };
+        }
+      }
+    }
+
     items.push({
       platform: "bluesky",
       remoteId: p.uri,
@@ -508,6 +554,7 @@ export async function fetchBlueskyTimeline(limit = 50): Promise<NormalizedTimeli
       repostedBy: repost,
       createdAt: p.record?.createdAt || p.indexedAt || new Date().toISOString(),
       isReply,
+      embed,
     });
   }
   return items;

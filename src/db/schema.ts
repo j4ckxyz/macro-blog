@@ -147,6 +147,7 @@ CREATE TABLE IF NOT EXISTS timeline (
   reposted_by TEXT,
   created_at TEXT,                     -- post timestamp (ISO)
   is_reply INTEGER DEFAULT 0,
+  embed_json TEXT,                     -- JSON embed or quote record
   fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(platform, remote_id)
 );
@@ -303,6 +304,7 @@ export interface TimelineRow {
   reposted_by: string | null;
   created_at: string | null;
   is_reply: number | null;
+  embed_json: string | null;
   fetched_at: string;
 }
 

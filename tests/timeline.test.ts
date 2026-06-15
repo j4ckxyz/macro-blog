@@ -97,6 +97,67 @@ describe("Bluesky timeline", () => {
     expect(items[0].url).toContain("bsky.app/profile/alice.bsky.social/post/abc");
     expect(items[1].repostedBy).toBe("Dave");
   });
+
+  test("normalizes link cards and quotes", async () => {
+    server = Bun.serve({
+      port: 0,
+      fetch(req) {
+        if (new URL(req.url).pathname === "/xrpc/app.bsky.feed.getTimeline") {
+          return Response.json({ feed: [
+            {
+              post: {
+                uri: "at://did:plc:a/app.bsky.feed.post/link",
+                cid: "c1",
+                author: { handle: "alice.bsky.social", displayName: "Alice" },
+                record: { text: "check this out", createdAt: "2026-06-15T10:00:00Z" },
+                embed: {
+                  $type: "app.bsky.embed.external#view",
+                  external: {
+                    uri: "https://example.com",
+                    title: "Example Title",
+                    description: "Example Desc",
+                    thumb: "thumb.png"
+                  }
+                }
+              }
+            },
+            {
+              post: {
+                uri: "at://did:plc:b/app.bsky.feed.post/quote",
+                cid: "c2",
+                author: { handle: "bob.dev", displayName: "Bob" },
+                record: { text: "quoting this", createdAt: "2026-06-15T09:00:00Z" },
+                embed: {
+                  $type: "app.bsky.embed.record#view",
+                  record: {
+                    $type: "app.bsky.embed.record#viewRecord",
+                    uri: "at://did:plc:c/app.bsky.feed.post/quoted",
+                    cid: "c3",
+                    author: { handle: "carol.dev", displayName: "Carol", avatar: "avatar.png" },
+                    value: { text: "original post", createdAt: "2026-06-15T08:00:00Z" }
+                  }
+                }
+              }
+            }
+          ] });
+        }
+        return new Response("404", { status: 404 });
+      }
+    });
+    await connectBluesky(`http://127.0.0.1:${server.port}`);
+    const { fetchBlueskyTimeline } = await import("../src/services/crosspost/bluesky.ts");
+    const items = await fetchBlueskyTimeline();
+    expect(items.length).toBe(2);
+    expect(items[0].embed?.type).toBe("link");
+    expect(items[0].embed?.title).toBe("Example Title");
+    expect(items[0].embed?.uri).toBe("https://example.com");
+    expect((items[0].embed as any).thumb).toBe("thumb.png");
+
+    expect(items[1].embed?.type).toBe("quote");
+    expect(items[1].embed?.author).toBe("Carol");
+    expect(items[1].embed?.authorHandle).toBe("@carol.dev");
+    expect((items[1].embed as any).content).toBe("original post");
+  });
 });
 
 describe("refreshTimeline + cache", () => {

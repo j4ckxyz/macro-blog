@@ -66,6 +66,9 @@ export function migrate(conn: Database): void {
   try {
     conn.exec("ALTER TABLE timeline ADD COLUMN is_reply INTEGER DEFAULT 0;");
   } catch (e) {}
+  try {
+    conn.exec("ALTER TABLE timeline ADD COLUMN embed_json TEXT;");
+  } catch (e) {}
 
   // Backfill content and categories_json for existing posts if NULL
   try {

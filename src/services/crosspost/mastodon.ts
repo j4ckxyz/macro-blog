@@ -123,6 +123,17 @@ export async function fetchMastodonHomeTimeline(limit = 40): Promise<NormalizedT
     const reblog = s.reblog;
     const post = reblog || s;
     const isReply = post.in_reply_to_id != null;
+    let embed: any = null;
+    if (post.card && post.card.url) {
+      embed = {
+        type: "link",
+        uri: post.card.url,
+        title: post.card.title || "",
+        description: post.card.description || "",
+        thumb: post.card.image || null,
+      };
+    }
+
     return {
       platform: "mastodon" as const,
       remoteId: s.id,
@@ -135,6 +146,7 @@ export async function fetchMastodonHomeTimeline(limit = 40): Promise<NormalizedT
       repostedBy: reblog ? s.account?.display_name || s.account?.username : null,
       createdAt: post.created_at || new Date().toISOString(),
       isReply,
+      embed,
     };
   });
 }
