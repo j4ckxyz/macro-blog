@@ -73,8 +73,15 @@ export async function buildPayload(post: PostRow): Promise<CrosspostPayload> {
   const permalink = permalinkFor(date, post.slug);
 
   const photos = Array.isArray(frontMatter.photos)
-    ? frontMatter.photos.map((p: any) => ({ url: absolutize(p.url), alt: p.alt }))
+    ? frontMatter.photos.map((p: any) => ({
+        url: absolutize(p.url),
+        alt: p.alt,
+        width: p.width ? Number(p.width) : undefined,
+        height: p.height ? Number(p.height) : undefined,
+      }))
     : [];
+
+  const linkBack = frontMatter.link_back !== false;
 
   return {
     text: markdownToText(body),
@@ -83,6 +90,7 @@ export async function buildPayload(post: PostRow): Promise<CrosspostPayload> {
     type: post.post_type as PostType,
     photos,
     inReplyTo: frontMatter.reply_to_url || undefined,
+    linkBack,
   };
 }
 

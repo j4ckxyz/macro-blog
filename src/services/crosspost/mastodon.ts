@@ -31,7 +31,7 @@ function authHeader(): string {
 
 /** Build the status text for a post depending on its type. */
 export function buildStatus(payload: CrosspostPayload): string {
-  const cfg = getConfig();
+  const linkBack = payload.linkBack === true;
   if (payload.type === "article" && payload.title) {
     const excerpt = payload.text.slice(0, 280).trim();
     return `${payload.title}\n\n${excerpt ? excerpt + "\n\n" : ""}${payload.url}`;
@@ -40,7 +40,11 @@ export function buildStatus(payload: CrosspostPayload): string {
     return `${payload.text}\n\n${payload.url}`.trim();
   }
   // Short note: post the text; Mastodon allows long posts so no truncation.
-  return payload.text.trim() || payload.url;
+  let status = payload.text.trim();
+  if (linkBack) {
+    status = `${status}\n\n${payload.url}`.trim();
+  }
+  return status || payload.url;
 }
 
 async function uploadMedia(photo: { url: string; alt?: string }): Promise<string> {
@@ -118,6 +122,7 @@ export async function fetchMastodonHomeTimeline(limit = 40): Promise<NormalizedT
   return statuses.map((s) => {
     const reblog = s.reblog;
     const post = reblog || s;
+    const isReply = post.in_reply_to_id != null;
     return {
       platform: "mastodon" as const,
       remoteId: s.id,
@@ -129,6 +134,7 @@ export async function fetchMastodonHomeTimeline(limit = 40): Promise<NormalizedT
       media: (post.media_attachments || []).map((m: any) => ({ url: m.url, alt: m.description || "" })),
       repostedBy: reblog ? s.account?.display_name || s.account?.username : null,
       createdAt: post.created_at || new Date().toISOString(),
+      isReply,
     };
   });
 }

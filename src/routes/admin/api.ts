@@ -53,7 +53,12 @@ async function fullPost(post: PostRow) {
   const syndications = db
     .query("SELECT platform, status, remote_url FROM syndications WHERE post_id = ?")
     .all(post.id);
-  return { ...post, content: body.trim(), front_matter: frontMatter, syndications };
+  let folderName = null;
+  if (post.bookmark_folder_id) {
+    const f = db.query("SELECT name FROM bookmark_folders WHERE id = ?").get(post.bookmark_folder_id) as any;
+    if (f) folderName = f.name;
+  }
+  return { ...post, content: body.trim(), front_matter: frontMatter, syndications, bookmark_folder: folderName };
 }
 
 // --- Posts ---
@@ -61,8 +66,27 @@ adminApi.get("/posts", (c) => {
   const status = c.req.query("status") ?? undefined;
   const limit = Number(c.req.query("limit") ?? 50);
   const offset = Number(c.req.query("offset") ?? 0);
-  const posts = listPosts({ status, limit, offset });
-  return c.json({ posts });
+  const type = c.req.query("type") ?? undefined;
+  const folderId = c.req.query("folder_id") ? Number(c.req.query("folder_id")) : undefined;
+  const q = c.req.query("q") ?? undefined;
+  
+  const db = getDb();
+  const posts = listPosts({ status, limit, offset, type, folderId, q }, db);
+  
+  const enriched = [];
+  for (const p of posts) {
+    const syndications = db
+      .query("SELECT platform, status, remote_url FROM syndications WHERE post_id = ?")
+      .all(p.id);
+    
+    let folderName = null;
+    if (p.bookmark_folder_id) {
+      const f = db.query("SELECT name FROM bookmark_folders WHERE id = ?").get(p.bookmark_folder_id) as any;
+      if (f) folderName = f.name;
+    }
+    enriched.push({ ...p, syndications, bookmark_folder: folderName });
+  }
+  return c.json({ posts: enriched });
 });
 
 adminApi.post("/posts", async (c) => {
@@ -81,6 +105,9 @@ adminApi.post("/posts", async (c) => {
     syndicateTo: b.syndicate_to ?? [],
     properties: {},
   };
+  if (b.bookmark_folder) (create as any).bookmark_folder = b.bookmark_folder;
+  if (b.link_back !== undefined) (create as any).link_back = b.link_back === true;
+
   // Re-derive type when caller did not force one.
   if (!b.type) {
     if (create.bookmarkOf) create.type = "bookmark";
@@ -113,6 +140,10 @@ adminApi.put("/posts/:slug", async (c) => {
   if (b.content !== undefined) replace.content = [b.content];
   if (b.name !== undefined || b.title !== undefined) replace.name = [b.name ?? b.title];
   if (b.categories !== undefined) replace.category = b.categories;
+  if (b.photos !== undefined) replace.photos = b.photos;
+  if (b.bookmark_folder !== undefined) replace.bookmark_folder = [b.bookmark_folder];
+  if (b.link_back !== undefined) replace.link_back = [b.link_back];
+
   await updatePost(post, { replace });
   if (Array.isArray(b.syndicate_to) && b.syndicate_to.length) {
     queueSyndication(post.id, b.syndicate_to);
@@ -292,8 +323,9 @@ adminApi.post("/mentions/:id/reply", async (c) => {
 // --- Timeline (following feed, cached server-side) ---
 adminApi.get("/timeline", (c) => {
   const limit = Number(c.req.query("limit") ?? 100);
+  const q = c.req.query("q") ?? undefined;
   return c.json({
-    items: getTimeline(limit),
+    items: getTimeline(limit, q),
     bluesky: { connected: isConnected("bluesky"), needs_reauth: needsReauth("bluesky") },
     mastodon: { connected: isConnected("mastodon"), needs_reauth: needsReauth("mastodon") },
   });
@@ -398,3 +430,141 @@ adminApi.post("/hugo/build", async (c) => {
 });
 
 adminApi.get("/hugo/status", (c) => c.json(getBuildStatus()));
+
+// --- Timeline replies ---
+adminApi.post("/timeline/:id/reply", async (c) => {
+  const id = Number(c.req.param("id"));
+  const { text } = await c.req.json();
+  if (!text || typeof text !== "string") return c.json({ error: "text required" }, 400);
+  const row = getDb().query("SELECT * FROM timeline WHERE id = ?").get(id) as any;
+  if (!row) return c.json({ error: "not_found" }, 404);
+
+  try {
+    if (row.platform === "mastodon") {
+      const r = await replyMastodon(row.remote_id, text);
+      return c.json({ ok: true, url: r.url });
+    }
+    if (row.platform === "bluesky") {
+      const parentUri = row.remote_id;
+      const parentCid = row.remote_cid;
+      const rootUri = row.root_uri || parentUri;
+      const rootCid = row.root_cid || parentCid;
+      if (!parentCid) {
+        return c.json({ error: "missing CID; cannot reply to this Bluesky post" }, 400);
+      }
+      const r = await replyBluesky(
+        { uri: parentUri, cid: parentCid },
+        { uri: rootUri, cid: rootCid },
+        text,
+      );
+      return c.json({ ok: true, url: r.remoteUrl });
+    }
+    return c.json({ error: "unknown platform" }, 400);
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 502);
+  }
+});
+
+// --- Bookmark Folders ---
+adminApi.get("/bookmarks/folders", (c) => {
+  const db = getDb();
+  const folders = db.query("SELECT * FROM bookmark_folders ORDER BY name ASC").all();
+  return c.json({ folders });
+});
+
+adminApi.post("/bookmarks/folders", async (c) => {
+  const { name } = await c.req.json();
+  if (!name || !String(name).trim()) return c.json({ error: "name required" }, 400);
+  const db = getDb();
+  try {
+    db.query("INSERT INTO bookmark_folders (name) VALUES (?)").run(name.trim());
+    const folder = db.query("SELECT * FROM bookmark_folders WHERE name = ?").get(name.trim());
+    return c.json(folder, 201);
+  } catch (e) {
+    return c.json({ error: "folder already exists" }, 400);
+  }
+});
+
+adminApi.delete("/bookmarks/folders/:id", (c) => {
+  const id = Number(c.req.param("id"));
+  getDb().query("DELETE FROM bookmark_folders WHERE id = ?").run(id);
+  return c.json({ ok: true });
+});
+
+// Helper for HTML to Markdown
+function htmlToMarkdown(html: string): string {
+  if (!html) return "";
+  let md = html;
+  md = md.replace(/<p[^>]*>([\s\S]*?)<\/p>/gi, "$1\n\n");
+  md = md.replace(/<br\s*\/?>/gi, "\n");
+  md = md.replace(/<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi, "[$2]($1)");
+  md = md.replace(/<img[^>]+src="([^"]+)"[^>]*alt="([^"]*)"[^>]*>/gi, "![$2]($1)");
+  md = md.replace(/<img[^>]+alt="([^"]*)"[^>]+src="([^"]+)"[^>]*>/gi, "![$1]($2)");
+  md = md.replace(/<img[^>]+src="([^"]+)"[^>]*>/gi, "![]($1)");
+  md = md.replace(/<(strong|b)>([\s\S]*?)<\/\1>/gi, "**$2**");
+  md = md.replace(/<(em|i)>([\s\S]*?)<\/\1>/gi, "_$2_");
+  md = md.replace(/<code>([\s\S]*?)<\/code>/gi, "`$1`");
+  md = md.replace(/<[^>]+>/g, "");
+  md = md.replace(/&amp;/g, "&")
+         .replace(/&lt;/g, "<")
+         .replace(/&gt;/g, ">")
+         .replace(/&quot;/g, '"')
+         .replace(/&#39;/g, "'");
+  return md.trim();
+}
+
+// --- Import from Micro.blog ---
+adminApi.post("/import/microblog", async (c) => {
+  const b = await c.req.json();
+  let feed: any;
+  if (b.url) {
+    try {
+      const res = await fetch(b.url);
+      if (!res.ok) return c.json({ error: `failed to fetch feed: ${res.statusText}` }, 400);
+      feed = await res.json();
+    } catch (e) {
+      return c.json({ error: `failed to fetch feed: ${(e as Error).message}` }, 400);
+    }
+  } else if (b.feed) {
+    feed = b.feed;
+  } else {
+    return c.json({ error: "either url or feed object is required" }, 400);
+  }
+
+  const items = feed.items || [];
+  let count = 0;
+  const db = getDb();
+  for (const item of items) {
+    const date = item.date_published ? new Date(item.date_published) : new Date();
+    let title = item.title || undefined;
+    let content = htmlToMarkdown(item.content_html || item.content_text || "");
+    const isoDate = date.toISOString().replace(/\.\d{3}Z$/, "Z");
+    const exists = db.query("SELECT 1 FROM posts WHERE published_at = ?").get(isoDate);
+    if (exists) continue;
+
+    const photos: any[] = [];
+    if (item.attachments) {
+      for (const att of item.attachments) {
+        if (att.mime_type?.startsWith("image/") || att.url) {
+          photos.push({ url: att.url, alt: att.title || "" });
+        }
+      }
+    }
+
+    await createPost({
+      action: "create",
+      type: title ? "article" : (photos.length ? "photo" : "post"),
+      content,
+      name: title,
+      categories: item.tags || [],
+      photos,
+      status: "published",
+      published: isoDate,
+      syndicateTo: [],
+      properties: {},
+    }, db);
+    count++;
+  }
+  triggerBuild();
+  return c.json({ ok: true, imported: count });
+});

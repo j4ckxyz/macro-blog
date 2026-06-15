@@ -14,8 +14,6 @@
       --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
       color-scheme:light;
     }
-    /* Dark palette. Applied automatically when the device prefers dark (unless
-       the user forced light), and whenever the user explicitly picks dark. */
     :root[data-theme="dark"], :root[data-theme="dark"] *{color-scheme:dark}
     @media (prefers-color-scheme: dark){
       :root:not([data-theme="light"]){
@@ -40,12 +38,24 @@
     body{font-family:var(--sans);color:var(--text);background:var(--bg);-webkit-font-smoothing:antialiased}
     a{color:var(--blue-text);text-decoration:none}
     button{font-family:inherit;cursor:pointer}
-    /* Make every form control theme-aware, including those created in JS. */
     input,textarea,select{background:var(--input-bg);color:var(--text)}
 
     /* layout */
     .shell{display:flex;min-height:100vh}
-    .sidebar{width:280px;flex:0 0 280px;background:var(--side);border-right:1px solid var(--border);padding:22px 16px;display:flex;flex-direction:column;gap:6px}
+    .sidebar{
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      width:280px;
+      flex:0 0 280px;
+      background:var(--side);
+      border-right:1px solid var(--border);
+      padding:22px 16px;
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+      overflow-y:auto;
+    }
     .main{flex:1;min-width:0;padding:26px 40px}
 
     /* brand */
@@ -115,7 +125,7 @@
     .extras label{display:flex;align-items:center;gap:6px}
     .extras input[type=text],.extras input[type=datetime-local]{border:1px solid var(--input-border);border-radius:8px;padding:7px 10px;font-size:14px}
     .toast{margin-top:14px;font-size:15px;color:#2a8a4a;min-height:20px}
-    .photolist{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+    .photolist{display:flex;gap:8px;flex-direction:column;margin-top:10px}
     .photolist img{width:70px;height:70px;object-fit:cover;border-radius:8px;border:1px solid var(--border)}
     .drop{margin-top:10px;border:1.5px dashed var(--field);border-radius:12px;padding:14px;color:var(--muted);font-size:14px;text-align:center}
     .drop.hover{border-color:var(--blue);background:var(--active)}
@@ -157,13 +167,14 @@
     .preview{border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-top:12px}
     .preview img{max-width:100%;border-radius:8px;margin:8px 0}
     .preview .hashtag{color:var(--blue);font-weight:600}
-    .photo-edit{display:flex;gap:10px;align-items:flex-start;margin-top:8px}
+    .photo-edit{display:flex;gap:10px;align-items:center;margin-top:8px}
     .photo-edit img{width:64px;height:64px;object-fit:cover;border-radius:8px;flex:0 0 64px}
     .photo-edit input{flex:1;border:1px solid var(--input-border);border-radius:8px;padding:8px 10px;font-size:14px}
 
     /* timeline */
-    .tl-item{display:flex;gap:12px;padding:14px 2px;border-bottom:1px solid var(--line);color:var(--text)}
+    .tl-item{display:flex;gap:12px;padding:14px 10px;border-bottom:1px solid var(--line);color:var(--text);border-radius:10px;margin-bottom:8px;transition: background .15s;}
     .tl-item:hover{background:var(--hover)}
+    .tl-item.is-reply{border-left: 3px solid var(--blue); padding-left: 14px; background: rgba(58,111,214,0.03); margin-left: 10px;}
     .tl-avatar{width:44px;height:44px;border-radius:50%;object-fit:cover;background:var(--field);flex:0 0 44px}
     .tl-body{min-width:0;flex:1}
     .tl-repost{font-size:12px;color:var(--muted);margin-bottom:2px}
@@ -181,7 +192,7 @@
     @media(max-width:760px){
       .sidebar{display:none}
       .shell{flex-direction:column}
-      .main{padding:14px 14px 84px}           /* room for bottom nav */
+      .main{padding:14px 14px 84px}
       .topbar{display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:20;background:var(--bg);border-bottom:1px solid var(--border);padding:10px 14px}
       .topbar .brand{margin:0}
       .topbar .name{font-size:20px}
@@ -191,7 +202,7 @@
       .bottomnav .tab svg{width:24px;height:24px}
       .bottomnav .tab.active{color:var(--blue)}
       .post-head{font-size:18px}
-      .editor{font-size:16px;min-height:46vh;padding:14px}     /* 16px avoids iOS zoom */
+      .editor{font-size:16px;min-height:46vh;padding:14px}
       .composer{max-width:none}
       .toolbar{gap:6px;flex-wrap:wrap}
       .tbtn{width:42px;height:40px}
@@ -213,11 +224,12 @@
   let token = localStorage.getItem("mb_token") || "";
   let cfg = null;
   let active = "composer";
+  let showReplies = localStorage.getItem("mb_show_replies") === "true";
+  let timelineSearchQuery = "";
+  let editingPostSlug = null;
   const root = document.getElementById("app");
 
-  /* ---------------- admin theme (light / dark) ----------------
-     Defaults to "auto" (follows the device OS via prefers-color-scheme); the
-     user can override to always-light or always-dark. Persisted locally. */
+  /* ---------------- admin theme (light / dark) ---------------- */
   const THEME_LABELS = {auto:"Auto", light:"Light", dark:"Dark"};
   let theme = localStorage.getItem("mb_theme") || "auto";
   function applyTheme(t){
@@ -234,7 +246,7 @@
     return h("button",{class:"themetoggle",title:"Switch light / dark mode",onclick:cycleTheme},
       h("span",{class:"ic",html:ICON.theme}), "Theme: "+THEME_LABELS[theme]);
   }
-  applyTheme(theme); // apply before first paint (covers the login screen too)
+  applyTheme(theme);
 
   // tiny dom helper
   function h(tag, attrs = {}, ...kids){
@@ -248,8 +260,61 @@
     for (const kid of kids.flat()){ if(kid==null) continue; el.append(kid.nodeType?kid:document.createTextNode(kid)); }
     return el;
   }
-  // Icons: Lucide (https://lucide.dev), ISC licensed, vendored inline so the
-  // admin has one consistent icon style with no external/CDN dependency.
+  
+  function debounce(func, wait) {
+    let timeout;
+    return function(...args) {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => func.apply(this, args), wait);
+    };
+  }
+
+  function formatPostText(text, platform) {
+    if (!text) return "";
+    let html = escapeHtml(text);
+    
+    // 1. Format URLs/links
+    const urlRegex = /(https?:\/\/[^\s)]+)/g;
+    html = html.replace(urlRegex, '<a href="$1" target="_blank" rel="noopener" style="color:var(--blue);font-weight:500;">$1</a>');
+    
+    // 2. Format @-mentions
+    if (platform === "bluesky") {
+      html = html.replace(/(^|\s)@([A-Za-z0-9.-]+)/g, (m, space, handle) => {
+        return space + `<a href="https://bsky.app/profile/${handle}" target="_blank" rel="noopener" style="color:var(--blue);font-weight:500;">@${handle}</a>`;
+      });
+    } else if (platform === "mastodon") {
+      html = html.replace(/(^|\s)@([A-Za-z0-9_.-]+(?:@[A-Za-z0-9_.-]+)?)/g, (m, space, handle) => {
+        const parts = handle.split("@");
+        let href = "#";
+        if (parts.length === 2) {
+          const [user, domain] = parts;
+          href = `https://${domain}/@${user}`;
+        } else {
+          const inst = (cfg && cfg.crossposting && cfg.crossposting.mastodon && cfg.crossposting.mastodon.instance_url) || "";
+          if (inst) {
+            href = `${inst.replace(/\/+$/, "")}/@${handle}`;
+          }
+        }
+        return space + `<a href="${href}" target="_blank" rel="noopener" style="color:var(--blue);font-weight:500;">@${handle}</a>`;
+      });
+    } else {
+      html = html.replace(/(^|\s)@([A-Za-z0-9_.-]+)/g, `$1<a href="#" style="color:var(--blue);font-weight:500;">@$2</a>`);
+    }
+
+    // 3. Format hashtags
+    if (platform === "bluesky") {
+      html = html.replace(/(^|\s)#([A-Za-z0-9_]+)/g, `$1<a href="https://bsky.app/hashtag/$2" target="_blank" rel="noopener" style="color:var(--blue);font-weight:500;">#$2</a>`);
+    } else if (platform === "mastodon") {
+      const inst = (cfg && cfg.crossposting && cfg.crossposting.mastodon && cfg.crossposting.mastodon.instance_url) || "https://mastodon.social";
+      html = html.replace(/(^|\s)#([A-Za-z0-9_]+)/g, `$1<a href="${inst.replace(/\/+$/, "")}/tags/$2" target="_blank" rel="noopener" style="color:var(--blue);font-weight:500;">#$2</a>`);
+    } else {
+      html = html.replace(/(^|\s)#([A-Za-z0-9_]+)/g, `$1<span style="color:var(--blue);font-weight:500;">#$2</span>`);
+    }
+    
+    return html;
+  }
+
+  // Icons: Lucide (https://lucide.dev)
   const svg = (d)=>`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
   const ICON = {
     pencil: svg('<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>'),
@@ -265,11 +330,14 @@
     home: svg('<path d="M3 9.5 12 3l9 6.5"/><path d="M5 10v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V10"/><path d="M9 21v-6h6v6"/>'),
     file: svg('<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/><path d="M8 13h8"/><path d="M8 17h8"/>'),
     terminal: svg('<polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/>'),
-    // Half-filled circle: represents light/dark contrast.
     theme: svg('<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/>'),
   };
 
-  // Client-side routing: each view maps to /admin/<slug>.
+  const starSvg = () => '<svg width="20" height="20" viewBox="0 0 24 24" fill="#fff"><path d="M12 2l2.6 6.3 6.8.5-5.2 4.4 1.7 6.6L12 16.9 6.1 20.3l1.7-6.6L2.6 8.8l6.8-.5z"/></svg>';
+  const blueskySvg = '<svg xmlns="http://www.w3.org/2000/svg" xml:space="preserve" viewBox="0 30.56 512 450.84" style="width:16px;height:16px;fill:#1185fe;vertical-align:middle;"><path d="M111 60.9c58.7 44.1 121.8 133.4 145 181.4 23.2-47.9 86.3-137.3 145-181.4 42.4-31.8 111-56.4 111 21.9 0 15.6-9 131.3-14.2 150.1-18.3 65.3-84.9 82-144.1 71.9 103.5 17.6 129.9 76 73 134.4-108 110.9-155.3-27.8-167.4-63.4-2.2-6.5-3.3-9.6-3.3-7 0-2.6-1.1.5-3.3 7-12.1 35.5-59.4 174.2-167.4 63.4-56.9-58.4-30.5-116.8 73-134.4-59.2 10.1-125.8-6.5-144.1-71.8C9 214.2 0 98.5 0 82.8 0 4.5 68.6 29.1 111 60.9"/></svg>';
+  const mastodonSvg = (id) => `<svg xmlns="http://www.w3.org/2000/svg" xml:space="preserve" viewBox="0 0 512 512" style="width:16px;height:16px;vertical-align:middle;"><linearGradient id="mastodon-grad-${id}" x1="254" x2="254" y1="513" y2="1" gradientTransform="matrix(1 0 0 -1 2 513)" gradientUnits="userSpaceOnUse"><stop offset="0" style="stop-color:#6364ff"/><stop offset="1" style="stop-color:#563acc"/></linearGradient><path d="M494.3 113.4C486.9 58.3 439 15 382.1 6.6 372.5 5.2 336.2 0 252 0h-.6c-84.2 0-102.2 5.2-111.8 6.6-55.3 8.2-105.7 47.1-118 102.8-5.9 27.4-6.5 57.8-5.4 85.7 1.6 40 1.9 79.9 5.5 119.7 2.5 26.4 6.9 52.7 13.1 78.5 11.6 47.7 58.7 87.4 104.9 103.6 49.4 16.9 102.6 19.7 153.5 8.1 5.6-1.3 11.1-2.8 16.6-4.5 12.4-3.9 26.9-8.3 37.5-16.1.1-.1.3-.2.4-.4s.1-.3.1-.5v-38.6c0-.2 0-.3-.1-.5s-.2-.3-.3-.4-.3-.2-.5-.2h-.5c-32.6 7.8-66.1 11.7-99.6 11.6-57.7 0-73.2-27.4-77.7-38.8-3.6-9.9-5.8-20.1-6.7-30.6 0-.2 0-.4.1-.5.1-.2.2-.3.3-.4s.3-.2.5-.2h.5c32.1 7.7 65 11.6 98 11.6 7.9 0 15.8 0 23.8-.2 33.2-.9 68.2-2.6 100.8-9 .8-.2 1.6-.3 2.3-.5 51.5-9.9 100.5-40.9 105.5-119.5.2-3.1.7-32.4.7-35.6-.1-11 3.4-77.5-.6-118.3" style="fill:url(#mastodon-grad-${id})"/><path d="M412.7 175.2v136.7h-54.2V179.2c0-27.9-11.6-42.2-35.3-42.2-26 0-39.1 16.8-39.1 50.1v72.6h-53.8v-72.6c0-33.3-13.1-50.1-39.1-50.1-23.5 0-35.3 14.2-35.3 42.2v132.6h-54.1V175.2c0-27.9 7.1-50.1 21.4-66.6 14.7-16.4 34-24.8 58-24.8 27.7 0 48.7 10.7 62.6 32l13.5 22.6 13.5-22.6c14-21.3 34.9-32 62.6-32 23.9 0 43.2 8.4 58 24.8q21.3 24.6 21.3 66.6" style="fill:#fff"/></svg>`;
+
+  // Client-side routing
   const VIEW2SLUG={composer:"",timeline:"timeline",posts:"posts",pages:"pages",mentions:"mentions",media:"uploads",logs:"logs",settings:"settings"};
   const SLUG2VIEW={"":"composer",timeline:"timeline",posts:"posts",pages:"pages",mentions:"mentions",uploads:"media",logs:"logs",settings:"settings"};
   function viewFromPath(){ const m=location.pathname.match(/\/admin\/?(.*)$/); const slug=((m&&m[1])||"").replace(/\/+$/,""); return SLUG2VIEW[slug]||"composer"; }
@@ -278,7 +346,7 @@
 
   async function api(path, opts={}){
     const headers = Object.assign({Authorization:"Bearer "+token}, opts.headers||{});
-    if (opts.json){ headers["content-type"]="application/json"; opts.body=JSON.stringify(opts.json); }
+    if (headers["content-type"]===undefined && opts.json){ headers["content-type"]="application/json"; opts.body=JSON.stringify(opts.json); }
     const res = await fetch(API+path, {...opts, headers});
     if (res.status===401){ token=""; localStorage.removeItem("mb_token"); renderLogin(); throw new Error("unauthorized"); }
     return res;
@@ -299,8 +367,6 @@
       h("div",{class:"brand"}, h("div",{class:"mark",html:starSvg()}), h("div",{class:"name"},"Macroblog")),
       pw, err, h("button",{class:"btn primary",onclick:go},"Sign in")));
   }
-
-  function starSvg(){ return '<svg width="20" height="20" viewBox="0 0 24 24" fill="#fff"><path d="M12 2l2.6 6.3 6.8.5-5.2 4.4 1.7 6.6L12 16.9 6.1 20.3l1.7-6.6L2.6 8.8l6.8-.5z"/></svg>'; }
 
   /* ---------------- shell ---------------- */
   async function boot(){
@@ -332,7 +398,7 @@
 
     const sidebar = h("div",{class:"sidebar"},
       h("div",{class:"brand"}, h("div",{class:"mark",html:starSvg()}), h("div",{class:"name"},"Macroblog")),
-      h("button",{class:"newpost",onclick:()=>go("composer")}, h("span",{class:"ic",html:ICON.pencil}), "New Post"),
+      h("button",{class:"newpost",onclick:()=>{editingPostSlug=null;go("composer");}}, h("span",{class:"ic",html:ICON.pencil}), "New Post"),
       h("div",{class:"account"},
         h("img",{class:"avatar",src:(cfg.site.avatar||""),alt:"",onerror:"this.style.visibility='hidden'"}),
         h("span",{class:"handle"},"@"+(cfg.site.username||"me")),
@@ -354,7 +420,7 @@
       h("div",{class:"brand"}, h("div",{class:"mark",html:starSvg()}), h("div",{class:"name"},"Macroblog")),
       h("div",{style:"display:flex;gap:8px"},
         h("button",{class:"topnew",onclick:cycleTheme,html:ICON.theme,title:"Theme: "+THEME_LABELS[theme]}),
-        h("button",{class:"topnew",onclick:()=>go("composer"),html:ICON.pencil,title:"New Post"})));
+        h("button",{class:"topnew",onclick:()=>{editingPostSlug=null;go("composer");},html:ICON.pencil,title:"New Post"})));
     const tabIds=["timeline","composer","posts","pages","mentions","media","logs","settings"];
     const bottomnav = h("div",{class:"bottomnav"},
       ...tabIds.map(id=>{const [,,label]=NAV.find(n=>n[0]===id);return h("a",{class:"tab"+(active===id?" active":""),href:"#",onclick:e=>{e.preventDefault();go(id);},html:ICON[NAV.find(n=>n[0]===id)[1]]+`<span>${label}</span>`});}));
@@ -368,9 +434,8 @@
     if(!status || !status.needs_reauth) return null;
     const name = platform==="bluesky"?"Bluesky":"Mastodon";
     return h("div",{class:"banner"}, `⚠ Your ${name} connection expired. `,
-      h("a",{href:"#",onclick:e=>{e.preventDefault();go0("settings");}},"Reconnect in Settings →"));
+      h("a",{href:"#",onclick:e=>{e.preventDefault();navigate("settings");}},"Reconnect in Settings →"));
   }
-  function go0(id){ navigate(id); }
 
   /* ---------------- composer ---------------- */
   function composer(view){
@@ -385,6 +450,8 @@
     const sched=h("input",{type:"datetime-local"});
     const photoList=h("div",{class:"photolist"});
     let bookmarkUrl="";
+    let linkBack = true;
+    let selectedFolder = "";
 
     editor.addEventListener("input",()=>{const n=[...editor.value].length;count.textContent=n+"/300";count.classList.toggle("over",n>300);});
 
@@ -397,6 +464,15 @@
         const d=await (await api("/api/media",{method:"POST",body:fd})).json();
         if(!d.url) continue;
         const photo={url:d.url,alt:""};
+        if (f.type.startsWith("image/")) {
+          const imgObj = new Image();
+          imgObj.onload = () => {
+            photo.width = imgObj.naturalWidth;
+            photo.height = imgObj.naturalHeight;
+            URL.revokeObjectURL(imgObj.src);
+          };
+          imgObj.src = URL.createObjectURL(f);
+        }
         photos.push(photo);
         const altInput=h("input",{type:"text",placeholder:"Describe this image (alt text)…",oninput:e=>{photo.alt=e.target.value;}});
         const remove=h("button",{class:"btn secondary",style:"padding:6px 10px;color:#d33",onclick:()=>{const i=photos.indexOf(photo);if(i>=0)photos.splice(i,1);row.remove();}},"✕");
@@ -410,28 +486,70 @@
     editor.addEventListener("drop",e=>{if(e.dataTransfer.files.length)upload(e.dataTransfer.files);});
 
     const syndicate=new Set();
-    const mkToggle=(uid,label)=>{const cb=h("input",{type:"checkbox",onchange:e=>e.target.checked?syndicate.add(uid):syndicate.delete(uid)});return h("label",{class:"ck"},cb,label);};
+    if (!editingPostSlug) {
+      if (cfg && cfg.crossposting && cfg.crossposting.bluesky && cfg.crossposting.bluesky.enabled) {
+        syndicate.add("bluesky");
+      }
+      if (cfg && cfg.crossposting && cfg.crossposting.mastodon && cfg.crossposting.mastodon.enabled) {
+        syndicate.add("mastodon");
+      }
+    }
+    const mkToggle=(uid,label,checked)=>{
+      const cb=h("input",{type:"checkbox",onchange:e=>e.target.checked?syndicate.add(uid):syndicate.delete(uid)});
+      if (checked) { cb.checked = true; syndicate.add(uid); }
+      return h("label",{class:"ck"},cb,label);
+    };
 
     // The "⋯" options menu (post type, cross-posting, schedule, drafts) — mirrors Micro.blog.
     const types=h("div",{class:"types"},
       ...[["post","Note"],["article","Article"],["photo","Photo"],["bookmark","Bookmark"]].map(([t,l])=>
         h("button",{class:"chip"+(t===type?" on":""),onclick:()=>{type=t;[...types.children].forEach((c,i)=>c.classList.toggle("on",["post","article","photo","bookmark"][i]===t));title.style.display=t==="article"?"block":"none";bookmarkRow.style.display=t==="bookmark"?"block":"none";}},l)));
-    const bookmarkRow=h("div",{style:"display:none;margin-top:8px"},h("input",{class:"titlefield",placeholder:"Bookmark URL",oninput:e=>bookmarkUrl=e.target.value}));
+    
+    const bookmarkUrlInput=h("input",{class:"titlefield",placeholder:"Bookmark URL",oninput:e=>bookmarkUrl=e.target.value});
+    const bookmarkRow=h("div",{style:"display:none;margin-top:8px"},bookmarkUrlInput);
+    
     const xp=h("div",{style:"margin-top:10px"});
     const notConnected=(name)=>h("div",{class:"hint"},"⚠ "+name+" is enabled but not connected. Open Settings → Cross-posting and click Connect.");
+    
     api("/api/oauth/bluesky").then(r=>r.json()).then(d=>{
-      if(d.connected) xp.append(mkToggle("bluesky", d.needs_reauth?"🦋 Bluesky — reconnect needed":"🦋 Cross-post to Bluesky"));
-      else if(cfg.crossposting&&cfg.crossposting.bluesky&&cfg.crossposting.bluesky.enabled) xp.append(notConnected("Bluesky"));
+      const isDefault = cfg.crossposting && cfg.crossposting.bluesky && cfg.crossposting.bluesky.enabled;
+      if(d.connected) xp.append(mkToggle("bluesky", d.needs_reauth?"🦋 Bluesky — reconnect needed":"🦋 Cross-post to Bluesky", syndicate.has("bluesky")));
+      else {
+        syndicate.delete("bluesky");
+        if(isDefault) xp.append(notConnected("Bluesky"));
+      }
     });
     api("/api/oauth/mastodon").then(r=>r.json()).then(d=>{
-      if(d.connected) xp.append(mkToggle("mastodon", d.needs_reauth?"🐘 Mastodon — reconnect needed":"🐘 Cross-post to Mastodon"));
-      else if(cfg.crossposting&&cfg.crossposting.mastodon&&cfg.crossposting.mastodon.enabled) xp.append(notConnected("Mastodon"));
+      const isDefault = cfg.crossposting && cfg.crossposting.mastodon && cfg.crossposting.mastodon.enabled;
+      if(d.connected) xp.append(mkToggle("mastodon", d.needs_reauth?"🐘 Mastodon — reconnect needed":"🐘 Cross-post to Mastodon", syndicate.has("mastodon")));
+      else {
+        syndicate.delete("mastodon");
+        if(isDefault) xp.append(notConnected("Mastodon"));
+      }
     });
+
+    const lbCb = h("input",{type:"checkbox",checked:linkBack,onchange:e=>linkBack=e.target.checked});
+    const lbToggle = h("label",{class:"ck"},lbCb,"🔗 Link back to blog post");
+    xp.append(lbToggle);
+
+    const bookmarkFolderSelect = h("select",{style:"border:1px solid var(--input-border);border-radius:8px;padding:8px 10px;font-size:14px;width:100%;margin-top:4px;"});
+    const loadFolders = async () => {
+      bookmarkFolderSelect.innerHTML = "";
+      bookmarkFolderSelect.append(h("option",{value:""},"(no folder)"));
+      const r = await (await api("/api/bookmarks/folders")).json();
+      for(const f of r.folders){
+        const opt = h("option",{value:f.name},f.name);
+        if (f.name === selectedFolder) opt.selected = true;
+        bookmarkFolderSelect.append(opt);
+      }
+    };
+    bookmarkFolderSelect.addEventListener("change", e => { selectedFolder = e.target.value; });
 
     const menu=h("div",{class:"menu",style:"display:none"},
       h("div",{class:"menu-label"},"Post type"), types,
       bookmarkRow,
-      h("div",{class:"menu-label"},"Tags"), tags,
+      h("div",{class:"menu-label", style: "margin-top:8px"},"Bookmark Folder"), bookmarkFolderSelect,
+      h("div",{class:"menu-label", style: "margin-top:8px"},"Tags"), tags,
       h("div",{class:"menu-label"},"Schedule"), sched,
       xp,
       h("div",{style:"margin-top:12px;display:flex;gap:8px"},
@@ -440,6 +558,53 @@
 
     const dots=h("button",{class:"dots",title:"Options",html:"⋯",onclick:()=>{menu.style.display=menu.style.display==="none"?"block":"none";}});
 
+    // Populate when editing
+    if (editingPostSlug) {
+      toast.textContent = "Loading post data…";
+      api("/api/posts/" + editingPostSlug).then(r => r.json()).then(data => {
+        toast.textContent = "";
+        type = data.post_type;
+        [...types.children].forEach((c,i)=>c.classList.toggle("on",["post","article","photo","bookmark"][i]===type));
+        title.style.display = type === "article" ? "block" : "none";
+        bookmarkRow.style.display = type === "bookmark" ? "block" : "none";
+        
+        editor.value = data.content || "";
+        editor.dispatchEvent(new Event("input"));
+        title.value = data.title || "";
+        tags.value = (data.front_matter.categories || []).join(", ");
+        if (data.front_matter.date) {
+          const dObj = new Date(data.front_matter.date);
+          const offset = dObj.getTimezoneOffset();
+          const local = new Date(dObj.getTime() - (offset * 60 * 1000));
+          sched.value = local.toISOString().slice(0, 16);
+        }
+        if (data.bookmark_folder) {
+          selectedFolder = data.bookmark_folder;
+        }
+        loadFolders();
+
+        if (data.front_matter.bookmark_url) {
+          bookmarkUrl = data.front_matter.bookmark_url;
+          bookmarkUrlInput.value = bookmarkUrl;
+        }
+        if (data.front_matter.link_back !== undefined) {
+          linkBack = data.front_matter.link_back !== false;
+          lbCb.checked = linkBack;
+        }
+        if (data.front_matter.photos) {
+          for (const photo of data.front_matter.photos) {
+            photos.push(photo);
+            const altInput=h("input",{type:"text",placeholder:"Describe this image (alt text)…",value:photo.alt || "",oninput:e=>{photo.alt=e.target.value;}});
+            const remove=h("button",{class:"btn secondary",style:"padding:6px 10px;color:#d33",onclick:()=>{const i=photos.indexOf(photo);if(i>=0)photos.splice(i,1);row.remove();}},"✕");
+            const row=h("div",{class:"photo-edit"},h("img",{src:photo.url,alt:""}),altInput,remove);
+            photoList.append(row);
+          }
+        }
+      });
+    } else {
+      loadFolders();
+    }
+
     function submit(draft){return async()=>{
       const body={type,content:editor.value,title:title.value||undefined,
         categories:tags.value.split(",").map(s=>s.trim()).filter(Boolean),
@@ -447,14 +612,33 @@
         bookmark_of:type==="bookmark"?bookmarkUrl:undefined,
         status:draft?"draft":"published",
         published:sched.value?new Date(sched.value).toISOString():undefined,
-        syndicate_to:[...syndicate]};
-      const r=await api("/api/posts",{method:"POST",json:body});
-      if(r.ok){const p=await r.json();toast.textContent=(draft?"✓ Saved draft":"✓ Posted to "+host())+" — /"+p.slug;editor.value="";title.value="";tags.value="";photos.length=0;photoList.innerHTML="";count.textContent="0/300";menu.style.display="none";}
+        syndicate_to:[...syndicate],
+        link_back: linkBack,
+        bookmark_folder: type==="bookmark" ? selectedFolder : undefined
+      };
+      
+      let r;
+      if (editingPostSlug) {
+        r = await api("/api/posts/" + editingPostSlug, {method:"PUT", json:body});
+      } else {
+        r = await api("/api/posts", {method:"POST", json:body});
+      }
+
+      if(r.ok){
+        const p=await r.json();
+        toast.textContent=(draft?"✓ Saved draft":"✓ Posted to "+host())+" — /"+p.slug;
+        if (editingPostSlug) {
+          editingPostSlug = null;
+          setTimeout(() => navigate("posts"), 1000);
+        } else {
+          editor.value="";title.value="";tags.value="";photos.length=0;photoList.innerHTML="";count.textContent="0/300";menu.style.display="none";
+        }
+      }
       else toast.textContent="Error: "+(await r.text());
     };}
 
     view.append(
-      h("div",{class:"post-head"},"Post to your blog: ",h("b",{},host()), dots),
+      h("div",{class:"post-head"},editingPostSlug ? "Edit post: " : "Post to your blog: ",h("b",{},host()), dots),
       h("div",{class:"composer"},
         menu, title, editor,
         h("div",{class:"toolbar"},
@@ -463,7 +647,7 @@
           tb(ICON.link,()=>{const u=prompt("Link URL");if(u){const s=editor.selectionStart,e=editor.selectionEnd,v=editor.value,txt=v.slice(s,e)||"link";editor.value=v.slice(0,s)+"["+txt+"]("+u+")"+v.slice(e);editor.dispatchEvent(new Event("input"));}}),
           count, h("div",{class:"spacer"}),
           h("button",{class:"btn secondary",onclick:togglePreview},"Preview"),
-          h("button",{class:"btn primary",onclick:submit(false)},"Post")),
+          h("button",{class:"btn primary",onclick:submit(false)},editingPostSlug ? "Update" : "Post")),
         previewPanel, fileInput, toast));
 
     function togglePreview(){
@@ -486,19 +670,13 @@
     const blocks=String(md).split(/\n{2,}/);
     return blocks.map(block=>{
       let s=escapeHtml(block);
-      // images ![alt](url)
       s=s.replace(/!\[([^\]]*)\]\((https?:\/\/[^)\s]+|\/[^)\s]+)\)/g,(m,alt,u)=>'<img src="'+u+'" alt="'+alt+'">');
-      // links [text](url)
       s=s.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+|\/[^)\s]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');
-      // bare urls (not already inside an attribute or anchor text)
       s=s.replace(/(^|[\s])(https?:\/\/[^\s<]+)/g,'$1<a href="$2" target="_blank" rel="noopener">$2</a>');
-      // bold then italic then inline code
       s=s.replace(/\*\*([^*]+)\*\*/g,"<strong>$1</strong>").replace(/__([^_]+)__/g,"<strong>$1</strong>");
       s=s.replace(/(^|[^*])\*([^*\n]+)\*/g,"$1<em>$2</em>").replace(/(^|[^_\w])_([^_\n]+)_/g,"$1<em>$2</em>");
       s=s.replace(/`([^`]+)`/g,"<code>$1</code>");
-      // hashtags
       s=s.replace(/(^|\s)#([A-Za-z0-9_]+)/g,'$1<span class="hashtag">#$2</span>');
-      // headings
       if(/^#{1,6}\s/.test(block)){ const lvl=block.match(/^#+/)[0].length; const txt=s.replace(/^#{1,6}\s/,""); return "<h"+Math.min(lvl+1,6)+">"+txt+"</h"+Math.min(lvl+1,6)+">"; }
       return "<p>"+s.replace(/\n/g,"<br>")+"</p>";
     }).join("\n");
@@ -507,22 +685,125 @@
   /* ---------------- posts ---------------- */
   async function postsView(view){
     view.append(h("h2",{class:"section"},"Posts"));
-    const sel=h("select",{onchange:()=>load(sel.value),style:"margin-bottom:14px;border:1px solid var(--input-border);border-radius:8px;padding:7px 10px"},
-      ...["","published","draft","scheduled"].map(s=>h("option",{value:s},s||"all")));
-    const list=h("div"); view.append(sel,list);
-    async function load(status){
+    
+    const statusSel=h("select",{onchange:()=>load(),style:"border:1px solid var(--input-border);border-radius:8px;padding:7px 10px;font-size:14px;"},
+      ...["","published","draft","scheduled","deleted"].map(s=>h("option",{value:s},s||"all statuses")));
+      
+    const typeSel=h("select",{onchange:()=>load(),style:"border:1px solid var(--input-border);border-radius:8px;padding:7px 10px;font-size:14px;"},
+      ...["","post","article","photo","reply","bookmark"].map(t=>h("option",{value:t},t||"all types")));
+
+    const folderSel=h("select",{onchange:()=>load(),style:"border:1px solid var(--input-border);border-radius:8px;padding:7px 10px;font-size:14px;"});
+    
+    const searchInput=h("input",{type:"text",placeholder:"Search posts…",style:"border:1px solid var(--input-border);border-radius:8px;padding:7px 10px;font-size:14px;flex:1;",oninput:debounce(()=>load(), 300)});
+
+    const filterRow = h("div",{style:"display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center;"},
+      statusSel, typeSel, folderSel, searchInput
+    );
+    
+    const list=h("div"); 
+    view.append(filterRow, list);
+    
+    const loadFolders = async () => {
+      folderSel.innerHTML = "";
+      folderSel.append(h("option",{value:""},"all folders"));
+      const r = await (await api("/api/bookmarks/folders")).json();
+      for(const f of r.folders){
+        folderSel.append(h("option",{value:f.id},f.name));
+      }
+    };
+    await loadFolders();
+
+    async function load(){
       list.innerHTML="Loading…";
-      const {posts}=await (await api("/api/posts"+(status?"?status="+status:""))).json();
+      const status = statusSel.value;
+      const type = typeSel.value;
+      const folderId = folderSel.value;
+      const q = searchInput.value.trim();
+      
+      let queryStr = "?limit=100";
+      if (status) queryStr += "&status=" + encodeURIComponent(status);
+      if (type) queryStr += "&type=" + encodeURIComponent(type);
+      if (folderId) queryStr += "&folder_id=" + encodeURIComponent(folderId);
+      if (q) queryStr += "&q=" + encodeURIComponent(q);
+      
+      const {posts}=await (await api("/api/posts"+queryStr)).json();
       list.innerHTML="";
       if(!posts.length){list.append(h("p",{style:"color:var(--muted)"},"No posts."));return;}
+      
       for(const p of posts){
-        list.append(h("div",{class:"row"},
-          h("div",{}, h("span",{class:"tag"},p.post_type), h("span",{},p.title||p.slug),
-            h("div",{class:"meta"},p.status+" · "+(p.published_at||p.created_at))),
-          h("button",{class:"btn secondary",style:"padding:6px 12px;color:#d33",onclick:async()=>{if(confirm("Delete this post?")){await api("/api/posts/"+p.slug,{method:"DELETE"});load(sel.value);}}},"Delete")));
+        const socialSpan = h("span",{style:"display:inline-flex;gap:6px;align-items:center;margin-left:8px;"});
+        if (p.syndications) {
+          for (const s of p.syndications) {
+            if (s.status === "success") {
+              if (s.platform === "bluesky") {
+                socialSpan.append(h("a",{href:s.remote_url,target:"_blank",title:"View on Bluesky",style:"display:inline-flex;align-items:center;"},
+                  h("span",{html: blueskySvg})
+                ));
+              } else if (s.platform === "mastodon") {
+                socialSpan.append(h("a",{href:s.remote_url,target:"_blank",title:"View on Mastodon",style:"display:inline-flex;align-items:center;"},
+                  h("span",{html: mastodonSvg(p.id)})
+                ));
+              }
+            }
+          }
+        }
+        
+        const dotColors = {published:"#2a8a4a", draft:"#8a9099", scheduled:"#ff8c00"};
+        const dotColor = dotColors[p.status] || "#8a9099";
+        const statusDot = h("span",{style:`display:inline-block;width:8px;height:8px;border-radius:50%;background:${dotColor};margin-right:6px;`,title:p.status});
+
+        const folderTag = p.bookmark_folder ? h("span",{class:"tag",style:"background:var(--active);color:var(--blue-text);"},"📁 " + p.bookmark_folder) : null;
+
+        const editBtn = h("button",{class:"btn secondary",style:"padding:6px 12px;margin-right:8px;",onclick:()=>{
+          editingPostSlug = p.slug;
+          navigate("composer");
+        }},"Edit");
+
+        const deleteBtn = h("button",{class:"btn secondary",style:"padding:6px 12px;color:#d33",onclick:async()=>{
+          if(confirm("Delete this post?")){
+            await api("/api/posts/"+p.slug,{method:"DELETE"});
+            load();
+          }
+        }},"Delete");
+
+        const contentText = p.content || "";
+        const snippet = contentText.length > 120 ? contentText.slice(0, 120) + "…" : contentText;
+        
+        let titleEl;
+        if (p.title) {
+          titleEl = h("div",{},
+            h("div",{style:"font-weight:700;font-size:16px;color:var(--text);"}, p.title),
+            snippet ? h("div",{style:"font-size:13.5px;color:var(--muted);margin-top:4px;white-space:pre-wrap;"}, snippet) : null
+          );
+        } else {
+          titleEl = h("div",{style:"font-size:14.5px;color:var(--text);white-space:pre-wrap;font-weight:500;"}, snippet || `(${p.slug})`);
+        }
+
+        const cats = p.categories_json ? JSON.parse(p.categories_json) : [];
+        const catsSpan = h("span",{style:"display:inline-flex;gap:4px;flex-wrap:wrap;margin-left:4px;"},
+          ...cats.map(c => h("span",{class:"tag",style:"background:var(--tag-bg);color:var(--muted);"}, "#" + c))
+        );
+
+        list.append(h("div",{class:"row",style:"align-items:flex-start;padding:16px 8px;border-bottom:1px solid var(--line);display:flex;gap:16px;"},
+          h("div",{style:"flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;"},
+            h("div",{style:"display:flex;align-items:center;gap:6px;flex-wrap:wrap;"},
+              statusDot,
+              h("span",{class:"tag"},p.post_type),
+              folderTag,
+              catsSpan,
+              socialSpan
+            ),
+            titleEl,
+            h("div",{class:"meta",style:"font-size:12px;color:var(--muted);"}, p.status+" · "+(p.published_at||p.created_at))
+          ),
+          h("div",{style:"display:flex;align-items:center;gap:8px;align-self:center;"},
+            editBtn,
+            deleteBtn
+          )
+        ));
       }
     }
-    load("");
+    load();
   }
 
   /* ---------------- media ---------------- */
@@ -547,33 +828,186 @@
     if(s<86400) return Math.floor(s/3600)+"h"; return Math.floor(s/86400)+"d";
   }
   async function timelineView(view){
-    const head=h("div",{class:"viewhead"},h("h2",{class:"section"},"Timeline"),
-      h("button",{class:"btn secondary",style:"padding:7px 14px",onclick:async()=>{view.innerHTML="";view.append(h("p",{style:"color:var(--muted)"},"Refreshing…"));await api("/api/timeline/refresh",{method:"POST"});view.innerHTML="";timelineView(view);}},"↻ Refresh"));
-    view.append(head);
-    const data=await (await api("/api/timeline")).json();
-    const b=reauthBanner("bluesky",data.bluesky); if(b)view.append(b);
-    const m=reauthBanner("mastodon",data.mastodon); if(m)view.append(m);
+    const toggleReplies = h("label",{class:"ck",style:"font-size:14.7px;user-select:none;margin-right:12px"},
+      h("input",{type:"checkbox",checked:showReplies,onchange:e=>{
+        showReplies = e.target.checked;
+        localStorage.setItem("mb_show_replies", showReplies);
+        renderTimelineList();
+      }}), "Show replies");
 
-    if(!data.items.length){
-      const anyConn=data.bluesky.connected||data.mastodon.connected;
-      view.append(h("p",{style:"color:var(--muted);margin-top:10px"},
-        anyConn?"No posts yet — tap Refresh in a moment.":"Connect Bluesky or Mastodon in Settings to see your following feed."));
-      return;
+    const searchInput = h("input",{
+      type: "text",
+      value: timelineSearchQuery,
+      placeholder: "Search timeline…",
+      style: "border:1px solid var(--input-border);border-radius:8px;padding:7px 10px;font-size:14px;flex:1;min-width:150px;",
+      oninput: e => {
+        timelineSearchQuery = e.target.value;
+        debounceLoad();
+      }
+    });
+
+    const head=h("div",{class:"viewhead"},
+      h("h2",{class:"section"},"Timeline"),
+      h("div",{style:"display:flex;align-items:center;gap:12px;flex-wrap:wrap;flex:1;justify-content:flex-end;"},
+        searchInput,
+        toggleReplies,
+        h("button",{class:"btn secondary",style:"padding:7px 14px",onclick:async()=>{
+          view.innerHTML="";
+          view.append(h("p",{style:"color:var(--muted)"},"Refreshing…"));
+          await api("/api/timeline/refresh",{method:"POST"});
+          view.innerHTML="";
+          timelineView(view);
+        }},"↻ Refresh")));
+    view.append(head);
+
+    const listContainer = h("div");
+    view.append(listContainer);
+
+    let data = null;
+    const debounceLoad = debounce(loadTimelineData, 300);
+
+    async function loadTimelineData() {
+      listContainer.innerHTML = "Loading…";
+      try {
+        const queryStr = timelineSearchQuery ? "?q=" + encodeURIComponent(timelineSearchQuery) : "";
+        data = await (await api("/api/timeline" + queryStr)).json();
+        renderTimelineList();
+      } catch (e) {
+        listContainer.innerHTML = "Error loading timeline.";
+      }
     }
-    const badge={bluesky:"🦋",mastodon:"🐘"};
-    for(const it of data.items){
-      const media=h("div",{class:"tl-media"},...(it.media||[]).slice(0,4).map(mm=>h("img",{src:mm.url,alt:mm.alt||"",loading:"lazy"})));
-      view.append(h("a",{class:"tl-item",href:it.url||"#",target:"_blank",rel:"noopener"},
-        h("img",{class:"tl-avatar",src:it.avatar||"",alt:"",onerror:"this.style.visibility='hidden'"}),
-        h("div",{class:"tl-body"},
-          it.repostedBy?h("div",{class:"tl-repost"},"🔁 "+it.repostedBy+" reposted"):null,
-          h("div",{class:"tl-meta"},h("span",{class:"tl-author"},it.author||it.authorHandle),
-            h("span",{class:"tl-handle"},it.authorHandle),
-            h("span",{class:"tl-dot"},"·"),h("span",{class:"tl-time"},timeAgo(it.createdAt)),
-            h("span",{class:"tl-badge"},badge[it.platform]||"")),
-          h("div",{class:"tl-text"},it.content||""),
-          (it.media&&it.media.length)?media:null)));
+
+    function renderTimelineList() {
+      listContainer.innerHTML = "";
+      if (!data) return;
+      const b=reauthBanner("bluesky",data.bluesky); if(b)listContainer.append(b);
+      const m=reauthBanner("mastodon",data.mastodon); if(m)listContainer.append(m);
+
+      const filteredItems = data.items.filter(it => showReplies || !it.isReply);
+      if(!filteredItems.length){
+        const anyConn=data.bluesky.connected||data.mastodon.connected;
+        listContainer.append(h("p",{style:"color:var(--muted);margin-top:10px"},
+          anyConn?"No posts found.":"Connect Bluesky or Mastodon in Settings to see your following feed."));
+        return;
+      }
+      
+      const badge={bluesky:"🦋",mastodon:"🐘"};
+      for(const it of filteredItems){
+        const media=h("div",{class:"tl-media"},...(it.media||[]).slice(0,4).map(mm=>h("img",{src:mm.url,alt:mm.alt||"",loading:"lazy"})));
+        
+        let replyOpen = false;
+        const replyBox = h("textarea",{class:"replybox",rows:"2",placeholder:"Reply to this post on " + (it.platform === "bluesky" ? "Bluesky" : "Mastodon") + "…"});
+        const replyStatus = h("span",{style:"font-size:13px;margin-left:8px;color:#2a8a4a"});
+        const replyRow = h("div",{style:"display:none;margin-top:8px;"},
+          replyBox,
+          h("div",{style:"display:flex;align-items:center;margin-top:6px"},
+            h("button",{class:"btn primary",style:"padding:6px 12px;font-size:13px;",onclick:async()=>{
+              if(!replyBox.value.trim()) return;
+              replyStatus.textContent = "Sending…";
+              const r = await api("/api/timeline/" + it.id + "/reply",{method:"POST",json:{text:replyBox.value}});
+              if(r.ok){
+                replyStatus.textContent = "✓ Sent";
+                replyBox.value = "";
+                setTimeout(() => { replyRow.style.display = "none"; replyOpen = false; replyStatus.textContent = ""; }, 1500);
+              } else {
+                replyStatus.textContent = "✗ " + (await r.json()).error;
+              }
+            }}, "Send Reply"),
+            replyStatus
+          )
+        );
+
+        let bookmarkOpen = false;
+        const bookmarkFolderSelect = h("select",{style:"border:1px solid var(--input-border);border-radius:8px;padding:6px 10px;font-size:13px;"});
+        const bookmarkFolderNew = h("input",{type:"text",placeholder:"Or create new folder…",style:"border:1px solid var(--input-border);border-radius:8px;padding:6px 10px;font-size:13px;width:150px;"});
+        const bookmarkStatus = h("span",{style:"font-size:13px;margin-left:8px;color:#2a8a4a"});
+        
+        const loadBookmarkFolders = async () => {
+          bookmarkFolderSelect.innerHTML = "";
+          bookmarkFolderSelect.append(h("option",{value:""},"(no folder)"));
+          const folderRes = await (await api("/api/bookmarks/folders")).json();
+          for(const f of folderRes.folders){
+            bookmarkFolderSelect.append(h("option",{value:f.name},f.name));
+          }
+        };
+
+        const bookmarkRow = h("div",{style:"display:none;margin-top:8px;gap:8px;align-items:center;flex-wrap:wrap;"},
+          h("span",{style:"font-size:13px;color:var(--muted);"},"Save to Folder:"),
+          bookmarkFolderSelect,
+          bookmarkFolderNew,
+          h("button",{class:"btn primary",style:"padding:6px 12px;font-size:13px;",onclick:async()=>{
+            bookmarkStatus.textContent = "Bookmarking…";
+            let folder = bookmarkFolderSelect.value;
+            const newFolder = bookmarkFolderNew.value.trim();
+            if (newFolder) {
+              folder = newFolder;
+            }
+            const body = {
+              type: "bookmark",
+              content: it.content,
+              bookmark_of: it.url,
+              properties: {
+                "bookmark-title": ["Post by " + (it.author || it.authorHandle)],
+              },
+              status: "published",
+              bookmark_folder: folder || undefined
+            };
+            const r = await api("/api/posts",{method:"POST",json:body});
+            if(r.ok){
+              bookmarkStatus.textContent = "✓ Bookmarked";
+              bookmarkFolderNew.value = "";
+              setTimeout(() => { bookmarkRow.style.display = "none"; bookmarkOpen = false; bookmarkStatus.textContent = ""; }, 1500);
+            } else {
+              bookmarkStatus.textContent = "✗ Error: " + (await r.text());
+            }
+          }}, "Confirm"),
+          bookmarkStatus
+        );
+
+        const replyBtn = h("button",{class:"btn secondary",style:"padding:5px 10px;font-size:13px;display:flex;align-items:center;gap:4px;",onclick:()=>{
+          replyOpen = !replyOpen;
+          replyRow.style.display = replyOpen ? "block" : "none";
+          if (replyOpen) replyBox.focus();
+        }}, "💬 Reply");
+
+        const bookmarkBtn = h("button",{class:"btn secondary",style:"padding:5px 10px;font-size:13px;display:flex;align-items:center;gap:4px;",onclick:async()=>{
+          bookmarkOpen = !bookmarkOpen;
+          bookmarkRow.style.display = bookmarkOpen ? "flex" : "none";
+          if (bookmarkOpen) {
+            await loadBookmarkFolders();
+            bookmarkFolderNew.focus();
+          }
+        }}, "🔖 Bookmark");
+
+        const actionButtons = h("div",{style:"display:flex;gap:10px;margin-top:10px;align-items:center;"},
+          replyBtn,
+          bookmarkBtn
+        );
+
+        const itemEl = h("div",{class:"tl-item" + (it.isReply ? " is-reply" : "")},
+          h("a",{href:it.url||"#",target:"_blank",rel:"noopener"},
+            h("img",{class:"tl-avatar",src:it.avatar||"",alt:"",onerror:"this.style.visibility='hidden'"})
+          ),
+          h("div",{class:"tl-body"},
+            it.isReply ? h("div",{style:"color:var(--blue);font-size:12px;font-weight:700;margin-bottom:4px;"}, "↩ Reply") : null,
+            it.repostedBy?h("div",{class:"tl-repost"},"🔁 "+it.repostedBy+" reposted"):null,
+            h("div",{class:"tl-meta"},
+              h("a",{class:"tl-author",href:it.url||"#",target:"_blank",rel:"noopener",style:"color:var(--text);"},it.author||it.authorHandle),
+              h("span",{class:"tl-handle"},it.authorHandle),
+              h("span",{class:"tl-dot"},"·"),
+              h("a",{class:"tl-time",href:it.url||"#",target:"_blank",rel:"noopener"}, timeAgo(it.createdAt)),
+              h("span",{class:"tl-badge"},badge[it.platform]||"")),
+            h("div",{class:"tl-text",html:formatPostText(it.content, it.platform)}),
+            (it.media&&it.media.length)?media:null,
+            actionButtons,
+            replyRow,
+            bookmarkRow)
+        );
+        listContainer.append(itemEl);
+      }
     }
+
+    loadTimelineData();
   }
 
   /* ---------------- pages ---------------- */
@@ -638,7 +1072,7 @@
       const st=h("span",{style:"font-size:13px;margin-left:8px;color:#2a8a4a"});
       view.append(h("div",{class:"card"},
         h("div",{}, (icon[s.platform]||"")+" ", h("a",{href:s.url||"#",target:"_blank"},s.author||"someone"), s.replied?h("span",{style:"color:var(--muted);font-size:12px;margin-left:8px"},"(replied)"):null),
-        h("div",{style:"margin:6px 0;color:var(--text)"},s.content||""), box,
+        h("div",{style:"margin:6px 0;color:var(--text)",html:formatPostText(s.content, s.platform)}), box,
         h("div",{},h("button",{class:"btn primary",style:"padding:7px 14px;margin-top:6px",onclick:async()=>{const r=await api("/api/mentions/"+s.id+"/reply",{method:"POST",json:{text:box.value}});st.textContent=r.ok?"✓ sent":"✗ "+(await r.json()).error;}},"Reply"),st)));
     }
     view.append(h("h3",{class:"sub"},"Webmentions"));
@@ -739,6 +1173,57 @@
     };
     const reload=()=>{view.innerHTML="";settingsView(view);};
 
+    const importUrlInput = h("input",{type:"text",placeholder:"https://username.micro.blog/feed.json",style:"width:100%;border:1px solid var(--input-border);border-radius:8px;padding:9px 11px;font-size:14px;"});
+    const importFileInput = h("input",{type:"file",accept:".json",style:"display:none",onchange:async e=>{
+      const file = e.target.files[0];
+      if (!file) return;
+      toast.textContent = "Reading file…";
+      const reader = new FileReader();
+      reader.onload = async evt => {
+        try {
+          const feed = JSON.parse(evt.target.result);
+          toast.textContent = "Importing…";
+          const r = await api("/api/import/microblog", {method:"POST", json:{feed}});
+          if (r.ok) {
+            const res = await r.json();
+            toast.textContent = `✓ Imported ${res.imported} posts successfully. Rebuilding site…`;
+            await api("/api/hugo/build",{method:"POST"});
+            toast.textContent = `✓ Imported ${res.imported} posts & rebuilt site.`;
+          } else {
+            toast.textContent = "✗ Import failed: " + (await r.text());
+          }
+        } catch(err) {
+          toast.textContent = "✗ Invalid JSON file: " + err.message;
+        }
+      };
+      reader.readAsText(file);
+    }});
+
+    const importSection = h("div",{},
+      h("h3",{class:"sub"},"Import from Micro.blog"),
+      h("div",{class:"field"},h("label",{},"JSON Feed URL"),
+        h("div",{style:"display:flex;gap:8px"},
+          importUrlInput,
+          h("button",{class:"btn secondary",style:"padding:8px 14px",onclick:async()=>{
+            const url = importUrlInput.value.trim();
+            if (!url) { toast.textContent = "Please enter a valid feed URL."; return; }
+            toast.textContent = "Importing…";
+            const r = await api("/api/import/microblog", {method:"POST", json:{url}});
+            if (r.ok) {
+              const res = await r.json();
+              toast.textContent = `✓ Imported ${res.imported} posts successfully. Rebuilding site…`;
+              await api("/api/hugo/build",{method:"POST"});
+              toast.textContent = `✓ Imported ${res.imported} posts & rebuilt site.`;
+            } else {
+              toast.textContent = "✗ Import failed: " + (await r.text());
+            }
+          }}, "Import"))),
+      h("div",{class:"field"},h("label",{},"Or upload export.json / feed.json"),
+        h("div",{style:"display:flex;gap:8px;align-items:center;"},
+          h("button",{class:"btn secondary",style:"padding:8px 14px",onclick:()=>importFileInput.click()},"Upload & import"),
+          importFileInput))
+    );
+
     view.append(h("h2",{class:"section"},"Settings"),
       h("h3",{class:"sub"},"Site"),
       f("Title",title),f("Description",desc),f("Author",author),f("Username",username),f("Public URL",url),
@@ -771,13 +1256,14 @@
       ma.connected ? "" : f("Mastodon instance",mInst),
       h("div",{class:"field"}, ma.connected
         ? h("div",{class:"conn"+(ma.needs_reauth?" reauth":"")},
-            h("span",{},ma.needs_reauth?("⚠ Reconnect needed ("+(ma.instance||"?")+")"):("✓ Connected ("+(ma.instance||"?")+")")),
+            h("span",{},ma.needs_reauth?("⚠ Reconnect needed ("+(ma.instance||"?")+")"):("✓ Connected ("+(ma.instance||"?"))),
             ma.needs_reauth?h("button",{class:"btn secondary",onclick:()=>location.href="/oauth/mastodon/connect?instance="+encodeURIComponent(ma.instance||mInst.value)},"Reconnect"):null,
             h("button",{class:"btn secondary danger",onclick:async()=>{await api("/api/oauth/mastodon/disconnect",{method:"POST"});reload();}},"Disconnect"))
         : h("button",{class:"btn secondary",onclick:()=>{const inst=(mInst.value||"").trim();if(!inst){toast.textContent="Enter your Mastodon instance URL first.";return;}location.href="/oauth/mastodon/connect?instance="+encodeURIComponent(inst);}},"Connect Mastodon")),
       h("label",{class:"ck"},ping,"Ping Micro.blog on publish"),
       h("h3",{class:"sub"},"Theme"), f("Active theme (drop into hugo-site/themes/)",themeSel),
       h("button",{class:"btn primary",style:"margin-top:6px",onclick:save},"Save settings"),
+      importSection,
       h("h3",{class:"sub"},"Security"), passwordChanger(),
       h("h3",{class:"sub"},"Backup & build"),
       h("div",{style:"display:flex;gap:10px;flex-wrap:wrap"},
@@ -786,7 +1272,6 @@
       buildStatusBox,
       toast);
 
-    // Show the latest build status (and the error log if the last build failed).
     api("/api/hugo/status").then(r=>r.json()).then(renderBuildStatus).catch(()=>{});
     function renderBuildStatus(s){
       buildStatusBox.innerHTML="";

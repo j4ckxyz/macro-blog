@@ -135,6 +135,8 @@ export async function buildPostRecord(
     createdAt: new Date().toISOString(),
   };
 
+  const linkBack = payload.linkBack === true;
+
   if (payload.type === "article" && payload.title) {
     const text = truncateGraphemes(`${payload.title}\n\n${payload.url}`, MAX_GRAPHEMES);
     record.text = text;
@@ -154,26 +156,70 @@ export async function buildPostRecord(
     const images = [];
     for (const photo of payload.photos.slice(0, 4)) {
       const blob = await uploadBlob(session, photo.url);
-      images.push({ alt: photo.alt ?? "", image: blob });
+      const imgObj: any = { alt: photo.alt ?? "", image: blob };
+      if (photo.width && photo.height) {
+        imgObj.aspectRatio = {
+          width: photo.width,
+          height: photo.height,
+        };
+      }
+      images.push(imgObj);
     }
-    record.text = truncateGraphemes(payload.text, MAX_GRAPHEMES);
-    record.facets = buildFacets(record.text);
+    
+    let text = payload.text;
+    let facets = [];
+    if (linkBack) {
+      text = truncateGraphemes(text, MAX_GRAPHEMES - 3);
+      const encoder = new TextEncoder();
+      const byteStart = encoder.encode(text + " ").length;
+      const byteEnd = byteStart + encoder.encode("🔗").length;
+      text += " 🔗";
+      facets = buildFacets(text);
+      facets.push({
+        index: { byteStart, byteEnd },
+        features: [{ $type: "app.bsky.richtext.facet#link", uri: payload.url }],
+      });
+    } else {
+      text = truncateGraphemes(text, MAX_GRAPHEMES);
+      facets = buildFacets(text);
+    }
+
+    record.text = text;
+    record.facets = facets;
     record.embed = { $type: "app.bsky.embed.images", images };
     return record;
   }
 
-  // Short note (possibly truncated with a "read more" link).
-  if (Array.from(payload.text).length > MAX_GRAPHEMES) {
-    const text = truncateGraphemes(`${payload.text}\n\n${payload.url}`, MAX_GRAPHEMES);
+  if (linkBack) {
+    let text = payload.text;
+    if (Array.from(text).length > MAX_GRAPHEMES - 3) {
+      text = truncateGraphemes(text, MAX_GRAPHEMES - 3);
+    }
+    const encoder = new TextEncoder();
+    const byteStart = encoder.encode(text + " ").length;
+    const byteEnd = byteStart + encoder.encode("🔗").length;
+    text += " 🔗";
+    const facets = buildFacets(text);
+    facets.push({
+      index: { byteStart, byteEnd },
+      features: [{ $type: "app.bsky.richtext.facet#link", uri: payload.url }],
+    });
     record.text = text;
-    record.facets = buildFacets(text);
-    record.embed = {
-      $type: "app.bsky.embed.external",
-      external: { uri: payload.url, title: payload.title ?? "Read more", description: "" },
-    };
+    record.facets = facets;
   } else {
-    record.text = payload.text;
-    record.facets = buildFacets(payload.text);
+    // Short note (possibly truncated with a "read more" link).
+    if (Array.from(payload.text).length > MAX_GRAPHEMES) {
+      const text = truncateGraphemes(`${payload.text}\n\n${payload.url}`, MAX_GRAPHEMES);
+      record.text = text;
+      record.facets = buildFacets(text);
+      record.embed = {
+        $type: "app.bsky.embed.external",
+        external: { uri: payload.url, title: payload.title ?? "Read more", description: "" },
+      };
+    } else {
+      record.text = payload.text;
+      record.facets = buildFacets(payload.text);
+    }
   }
   return record;
 }
@@ -241,9 +287,13 @@ export async function fetchBlueskyTimeline(limit = 50): Promise<NormalizedTimeli
     const repost = entry.reason?.$type?.includes("reasonRepost")
       ? entry.reason?.by?.displayName || entry.reason?.by?.handle
       : null;
+    const isReply = !!entry.reply;
     items.push({
       platform: "bluesky",
       remoteId: p.uri,
+      remoteCid: p.cid,
+      rootUri: entry.reply?.root?.uri || p.uri,
+      rootCid: entry.reply?.root?.cid || p.cid,
       author: p.author?.displayName || handle || "",
       authorHandle: handle ? "@" + handle : "",
       avatar: p.author?.avatar || "",
@@ -252,6 +302,7 @@ export async function fetchBlueskyTimeline(limit = 50): Promise<NormalizedTimeli
       media,
       repostedBy: repost,
       createdAt: p.record?.createdAt || p.indexedAt || new Date().toISOString(),
+      isReply,
     });
   }
   return items;

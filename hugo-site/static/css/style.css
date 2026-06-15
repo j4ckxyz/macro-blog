@@ -1,11 +1,14 @@
 :root {
-  --ink: #111;
-  --muted: #666;
-  --bg: #fff;
-  --accent: #111;
-  --rule: #eee;
   --serif: Georgia, "Times New Roman", serif;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  /* Default fallbacks if appearance.html is missing */
+  --user-font: var(--serif);
+  --bg: #ffffff;
+  --ink: #111111;
+  --muted: #666666;
+  --accent: #111111;
+  --rule: #eeeeee;
 }
 
 * { box-sizing: border-box; }
@@ -14,7 +17,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font-family: var(--serif);
+  font-family: var(--user-font);
   font-size: 18px;
   line-height: 1.6;
 }

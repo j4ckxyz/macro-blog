@@ -3,6 +3,8 @@ import type { PostType } from "../../lib/micropub-parser.ts";
 export interface CrosspostPhoto {
   url: string; // absolute URL
   alt?: string;
+  width?: number;
+  height?: number;
 }
 
 export interface CrosspostPayload {
@@ -12,6 +14,7 @@ export interface CrosspostPayload {
   type: PostType;
   photos: CrosspostPhoto[];
   inReplyTo?: string;
+  linkBack?: boolean;
 }
 
 export interface CrosspostResult {

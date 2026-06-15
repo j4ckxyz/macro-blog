@@ -70,7 +70,10 @@ export function serializeFrontMatter(fm: FrontMatter): string {
     lines.push("photos = [");
     for (const p of fm.photos) {
       const alt = p.alt ?? "";
-      lines.push(`  { url = ${tomlString(p.url)}, alt = ${tomlString(alt)} },`);
+      let optStr = "";
+      if (p.width) optStr += `, width = ${p.width}`;
+      if (p.height) optStr += `, height = ${p.height}`;
+      lines.push(`  { url = ${tomlString(p.url)}, alt = ${tomlString(alt)}${optStr} },`);
     }
     lines.push("]");
   }
@@ -81,6 +84,8 @@ export function serializeFrontMatter(fm: FrontMatter): string {
   if (fm.bookshelf) lines.push(`bookshelf = ${tomlString(fm.bookshelf)}`);
   if (fm.bookmark_url) lines.push(`bookmark_url = ${tomlString(fm.bookmark_url)}`);
   if (fm.bookmark_title) lines.push(`bookmark_title = ${tomlString(fm.bookmark_title)}`);
+  if (fm.bookmark_folder) lines.push(`bookmark_folder = ${tomlString(fm.bookmark_folder)}`);
+  if (fm.link_back !== undefined) lines.push(`link_back = ${fm.link_back ? "true" : "false"}`);
   lines.push(`draft = ${fm.draft ? "true" : "false"}`);
   lines.push("+++");
   return lines.join("\n");
@@ -110,6 +115,7 @@ export function parseFrontMatter(content: string): ParsedFile {
     const kv = line.match(/^([a-zA-Z0-9_]+)\s*[:=]\s*(.+)$/);
     if (!kv) continue;
     const key = kv[1];
+    if (key === "photos") continue;
     let val = kv[2].trim();
     if (val.startsWith("[") || val.startsWith("{")) {
       fm[key] = parseInlineArray(val);
@@ -119,6 +125,35 @@ export function parseFrontMatter(content: string): ParsedFile {
       fm[key] = val.replace(/^["']|["']$/g, "");
     }
   }
+
+  // Custom parsing for photos array of inline tables
+  const photosMatch = raw.match(/photos\s*=\s*\[([\s\S]*?)\]/);
+  if (photosMatch) {
+    const photoBlocks: any[] = [];
+    const blockRegex = /\{([^}]+)\}/g;
+    let bm;
+    while ((bm = blockRegex.exec(photosMatch[1])) !== null) {
+      const parts = bm[1].split(",");
+      const obj: any = {};
+      for (const part of parts) {
+        const kv = part.split("=");
+        if (kv.length === 2) {
+          const k = kv[0].trim();
+          const v = kv[1].trim().replace(/^["']|["']$/g, "");
+          if (k === "width" || k === "height") {
+            obj[k] = Number(v) || undefined;
+          } else {
+            obj[k] = v;
+          }
+        }
+      }
+      if (obj.url) {
+        photoBlocks.push(obj);
+      }
+    }
+    fm.photos = photoBlocks;
+  }
+
   return { frontMatterRaw: raw, frontMatter: fm, body };
 }
 
@@ -169,6 +204,12 @@ function buildFrontMatter(req: MicropubCreate, date: Date): FrontMatter {
   if (req.bookmarkOf) {
     fm.bookmark_url = req.bookmarkOf;
     fm.bookmark_title = firstFromProps(req.properties, "bookmark-title");
+    if ((req as any).bookmark_folder) {
+      fm.bookmark_folder = (req as any).bookmark_folder;
+    }
+  }
+  if ((req as any).link_back !== undefined) {
+    fm.link_back = (req as any).link_back === true;
   }
   const isbn = firstFromProps(req.properties, "isbn");
   if (isbn) fm.isbn = isbn;
@@ -200,6 +241,20 @@ export async function createPost(
   );
 
   const fm = buildFrontMatter(req, date);
+
+  let folderId: number | null = null;
+  if (fm.bookmark_folder) {
+    const folderName = String(fm.bookmark_folder).trim();
+    if (folderName) {
+      let folder = db.query("SELECT id FROM bookmark_folders WHERE name = ?").get(folderName) as { id: number } | null;
+      if (!folder) {
+        db.query("INSERT INTO bookmark_folders (name) VALUES (?)").run(folderName);
+        folder = db.query("SELECT id FROM bookmark_folders WHERE name = ?").get(folderName) as { id: number } | null;
+      }
+      folderId = folder ? folder.id : null;
+    }
+  }
+
   const dir = TYPE_DIRS[req.type];
   const relPath = join(dir, `${slug}.md`);
   const absPath = join(CONTENT_DIR, relPath);
@@ -216,8 +271,8 @@ export async function createPost(
   else status = "published";
 
   db.query(
-    `INSERT INTO posts (slug, file_path, post_type, title, status, published_at, scheduled_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO posts (slug, file_path, post_type, title, status, published_at, scheduled_at, bookmark_folder_id, content, categories_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     slug,
     relPath,
@@ -226,6 +281,9 @@ export async function createPost(
     status,
     status === "published" ? date.toISOString() : null,
     scheduled ? date.toISOString() : null,
+    folderId,
+    req.content ?? "",
+    JSON.stringify(req.categories ?? []),
   );
 
   return {
@@ -275,6 +333,9 @@ export async function updatePost(
       else if (key === "name") fm.title = Array.isArray(val) ? val[0] : val;
       else if (key === "category") fm.categories = (val as any[]).map(String);
       else if (key === "syndication") fm.syndication = (val as any[]).map(String);
+      else if (key === "photos") fm.photos = val;
+      else if (key === "bookmark_folder") fm.bookmark_folder = Array.isArray(val) ? val[0] : val;
+      else if (key === "link_back") fm.link_back = Array.isArray(val) ? (val[0] === true || val[0] === "true") : (val === true || val === "true");
       else fm[key] = Array.isArray(val) && val.length === 1 ? val[0] : val;
     }
   }
@@ -297,8 +358,27 @@ export async function updatePost(
   const newFm = normaliseFm(fm, post.post_type as PostType);
   const fileContent = serializeFrontMatter(newFm) + "\n\n" + body + "\n";
   await Bun.write(join(CONTENT_DIR, post.file_path), fileContent);
-  db.query("UPDATE posts SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(
+
+  let folderId: number | null = null;
+  if (newFm.bookmark_folder) {
+    const folderName = String(newFm.bookmark_folder).trim();
+    if (folderName) {
+      let folder = db.query("SELECT id FROM bookmark_folders WHERE name = ?").get(folderName) as { id: number } | null;
+      if (!folder) {
+        db.query("INSERT INTO bookmark_folders (name) VALUES (?)").run(folderName);
+        folder = db.query("SELECT id FROM bookmark_folders WHERE name = ?").get(folderName) as { id: number } | null;
+      }
+      folderId = folder ? folder.id : null;
+    }
+  }
+
+  db.query(
+    "UPDATE posts SET title = ?, bookmark_folder_id = ?, content = ?, categories_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+  ).run(
     newFm.title ?? null,
+    folderId,
+    body,
+    JSON.stringify(newFm.categories ?? []),
     post.id,
   );
 
@@ -338,6 +418,8 @@ function normaliseFm(fm: Record<string, any>, type: PostType): FrontMatter {
     bookshelf: fm.bookshelf,
     bookmark_url: fm.bookmark_url,
     bookmark_title: fm.bookmark_title,
+    bookmark_folder: fm.bookmark_folder,
+    link_back: fm.link_back !== undefined ? (fm.link_back === true || fm.link_back === "true") : undefined,
     draft: fm.draft === true || fm.draft === "true",
   };
 }
@@ -364,19 +446,42 @@ export async function addSyndicationUrl(post: PostRow, url: string): Promise<voi
 }
 
 export function listPosts(
-  opts: { status?: string; limit?: number; offset?: number } = {},
+  opts: { status?: string; limit?: number; offset?: number; type?: string; folderId?: number; q?: string } = {},
   db: Database = getDb(),
 ): PostRow[] {
   const limit = opts.limit ?? 50;
   const offset = opts.offset ?? 0;
-  if (opts.status) {
-    return db
-      .query("SELECT * FROM posts WHERE status = ? ORDER BY created_at DESC LIMIT ? OFFSET ?")
-      .all(opts.status, limit, offset) as PostRow[];
+  
+  let queryStr = "SELECT * FROM posts WHERE 1=1";
+  const params: any[] = [];
+  
+  if (opts.status && opts.status !== "all" && opts.status !== "") {
+    queryStr += " AND status = ?";
+    params.push(opts.status);
+  } else {
+    // Filter out deleted posts by default
+    queryStr += " AND status != 'deleted'";
   }
-  return db
-    .query("SELECT * FROM posts ORDER BY created_at DESC LIMIT ? OFFSET ?")
-    .all(limit, offset) as PostRow[];
+  
+  if (opts.type) {
+    queryStr += " AND post_type = ?";
+    params.push(opts.type);
+  }
+  
+  if (opts.folderId) {
+    queryStr += " AND bookmark_folder_id = ?";
+    params.push(opts.folderId);
+  }
+  
+  if (opts.q) {
+    queryStr += " AND (title LIKE ? OR slug LIKE ?)";
+    params.push(`%${opts.q}%`, `%${opts.q}%`);
+  }
+  
+  queryStr += " ORDER BY created_at DESC LIMIT ? OFFSET ?";
+  params.push(limit, offset);
+  
+  return db.query(queryStr).all(...params) as PostRow[];
 }
 
 export { TYPE_DIRS };

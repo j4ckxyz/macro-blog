@@ -13,6 +13,9 @@ CREATE TABLE IF NOT EXISTS posts (
   status TEXT NOT NULL DEFAULT 'draft',
   published_at DATETIME,
   scheduled_at DATETIME,
+  bookmark_folder_id INTEGER REFERENCES bookmark_folders(id) ON DELETE SET NULL,
+  content TEXT,
+  categories_json TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -131,6 +134,9 @@ CREATE TABLE IF NOT EXISTS timeline (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   platform TEXT NOT NULL,              -- bluesky, mastodon
   remote_id TEXT NOT NULL,            -- at:// uri or status id
+  remote_cid TEXT,
+  root_uri TEXT,
+  root_cid TEXT,
   author_name TEXT,
   author_handle TEXT,
   author_avatar TEXT,
@@ -140,8 +146,16 @@ CREATE TABLE IF NOT EXISTS timeline (
   media_json TEXT,                     -- JSON array of {url, alt}
   reposted_by TEXT,
   created_at TEXT,                     -- post timestamp (ISO)
+  is_reply INTEGER DEFAULT 0,
   fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(platform, remote_id)
+);
+
+-- Bookmark folders
+CREATE TABLE IF NOT EXISTS bookmark_folders (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT UNIQUE NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Uploaded media
@@ -171,6 +185,7 @@ export interface PostRow {
   status: string;
   published_at: string | null;
   scheduled_at: string | null;
+  bookmark_folder_id: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -275,6 +290,9 @@ export interface TimelineRow {
   id: number;
   platform: string;
   remote_id: string;
+  remote_cid: string | null;
+  root_uri: string | null;
+  root_cid: string | null;
   author_name: string | null;
   author_handle: string | null;
   author_avatar: string | null;
@@ -284,6 +302,7 @@ export interface TimelineRow {
   media_json: string | null;
   reposted_by: string | null;
   created_at: string | null;
+  is_reply: number | null;
   fetched_at: string;
 }
 
