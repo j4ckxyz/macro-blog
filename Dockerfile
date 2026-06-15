@@ -37,8 +37,10 @@ ENV MACROBLOG_CONFIG=/data/macroblog.config.yaml \
     MACROBLOG_HOST=0.0.0.0 \
     NODE_ENV=production
 
+# The runtime user must own all of /app (not just data dirs): the Hugo build
+# writes a staging dir (public.next), the build lock, and resources/ inside /app.
 RUN mkdir -p /data /app/uploads /app/public /app/hugo-site/content /app/hugo-site/data \
- && chown -R bun:bun /data /app/uploads /app/public /app/hugo-site/content /app/hugo-site/data
+ && chown -R bun:bun /data /app
 
 USER bun
 EXPOSE 3000

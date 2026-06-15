@@ -49,70 +49,90 @@ async function doFullBuild(): Promise<void> {
   const cfg = getConfig();
   const start = Date.now();
   status.running = true;
-  // Build into a staging dir and only swap it into place on success, so a
-  // failed build can NEVER take down the live site.
-  const stageDir = PUBLIC_DIR + ".next";
   try {
-    await rm(stageDir, { recursive: true, force: true });
-    await mkdir(stageDir, { recursive: true });
-    await writeWebmentionData();
+    // Prefer building into a staging dir and swapping on success (atomic), so a
+    // failed build can't take down the live site. If we can't create the
+    // sibling staging dir (e.g. restrictive filesystem perms), fall back to
+    // building in place rather than failing the whole build.
+    const stageDir = PUBLIC_DIR + ".next";
+    let outDir = stageDir;
+    let useStaging = true;
+    try {
+      await rm(stageDir, { recursive: true, force: true });
+      await mkdir(stageDir, { recursive: true });
+    } catch (e) {
+      console.warn(`[hugo] staging dir unavailable (${(e as Error).message}); building in place`);
+      useStaging = false;
+      outDir = PUBLIC_DIR;
+      await mkdir(PUBLIC_DIR, { recursive: true });
+    }
+
+    await writeWebmentionData().catch((e) => {
+      console.warn("[hugo] writeWebmentionData failed:", (e as Error).message);
+    });
 
     const themeSeconds = String(Math.floor(Date.now() / 1000));
     const bin = cfg.hugo.binary || "hugo";
-    const args = [
-      "-s", HUGO_SITE,
-      "-d", stageDir,
-      "-b", cfg.site.url,
-      "--cleanDestinationDir",
-      "--logLevel", "warn",
-    ];
-    if (cfg.hugo.theme) {
-      args.push("--theme", cfg.hugo.theme);
+    const args = ["-s", HUGO_SITE, "-d", outDir, "-b", cfg.site.url, "--logLevel", "warn"];
+    // Only clean when staging (cleaning in place would wipe a good site on failure).
+    if (useStaging) args.push("--cleanDestinationDir");
+    if (cfg.hugo.theme) args.push("--theme", cfg.hugo.theme);
+
+    let out = "", err = "", code = -1;
+    try {
+      const proc = Bun.spawn([bin, ...args], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          HUGO_TITLE: cfg.site.title,
+          HUGO_LANGUAGECODE: cfg.site.language,
+          HUGO_PARAMS_THEME_SECONDS: themeSeconds,
+          HUGO_PARAMS_DESCRIPTION: cfg.site.description,
+          HUGO_PARAMS_AVATAR: cfg.site.avatar,
+          HUGO_PARAMS_AUTHOR_NAME: cfg.site.author,
+          HUGO_PARAMS_AUTHOR_USERNAME: cfg.site.username,
+          HUGO_PARAMS_INCLUDE_REPLY_TYPE: String(cfg.feeds.include_reply_type),
+        },
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      [out, err, code] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+        proc.exited,
+      ]);
+    } catch (spawnErr) {
+      // e.g. hugo binary missing / not executable — record it so it's visible.
+      err = `failed to launch hugo ('${bin}'): ${(spawnErr as Error).message}`;
     }
-    const proc = Bun.spawn([bin, ...args], {
-      cwd: process.cwd(),
-      env: {
-        ...process.env,
-        // Override config.toml defaults with live values from the YAML config.
-        HUGO_TITLE: cfg.site.title,
-        HUGO_LANGUAGECODE: cfg.site.language,
-        HUGO_PARAMS_THEME_SECONDS: themeSeconds,
-        HUGO_PARAMS_DESCRIPTION: cfg.site.description,
-        HUGO_PARAMS_AVATAR: cfg.site.avatar,
-        HUGO_PARAMS_AUTHOR_NAME: cfg.site.author,
-        HUGO_PARAMS_AUTHOR_USERNAME: cfg.site.username,
-        HUGO_PARAMS_INCLUDE_REPLY_TYPE: String(cfg.feeds.include_reply_type),
-      },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [out, err, code] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-      proc.exited,
-    ]);
     status.log = (out + "\n" + err).trim();
 
-    // A build that "succeeds" but produced no home page is still a failure.
-    const ok = code === 0 && existsSync(join(stageDir, "index.html"));
+    const ok = code === 0 && existsSync(join(outDir, "index.html"));
     status.lastSuccess = ok;
     if (!ok) {
       console.error(
-        `[hugo] build FAILED (exit ${code}). Live site left untouched.\n` +
-          (status.log || "(no output)"),
+        `[hugo] build FAILED (exit ${code}).${useStaging ? " Live site left untouched." : ""}\n` +
+          (status.log || "(no output captured)"),
       );
-      await rm(stageDir, { recursive: true, force: true });
+      if (useStaging) await rm(stageDir, { recursive: true, force: true });
       throw new Error(`hugo build failed (exit ${code})`);
     }
 
-    // Atomic-ish swap: move the old output aside, move staging in, drop the old.
-    const bakDir = PUBLIC_DIR + ".bak";
-    await rm(bakDir, { recursive: true, force: true });
-    if (existsSync(PUBLIC_DIR)) await rename(PUBLIC_DIR, bakDir);
-    await rename(stageDir, PUBLIC_DIR);
-    await rm(bakDir, { recursive: true, force: true });
+    if (useStaging) {
+      // Atomic-ish swap: move old output aside, move staging in, drop the old.
+      const bakDir = PUBLIC_DIR + ".bak";
+      await rm(bakDir, { recursive: true, force: true });
+      if (existsSync(PUBLIC_DIR)) await rename(PUBLIC_DIR, bakDir);
+      await rename(stageDir, PUBLIC_DIR);
+      await rm(bakDir, { recursive: true, force: true });
+    }
 
     await runPagefind();
+  } catch (err) {
+    // Make sure the failure is always recorded for the admin/status view.
+    status.lastSuccess = false;
+    if (!status.log) status.log = `build error: ${(err as Error).message}`;
+    throw err;
   } finally {
     status.running = false;
     status.lastRun = new Date().toISOString();
