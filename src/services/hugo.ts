@@ -119,24 +119,39 @@ async function doFullBuild(): Promise<void> {
     }
 
     if (useStaging) {
-      // Atomic-ish swap: move old output aside, move staging in, drop the old.
-      const bakDir = PUBLIC_DIR + ".bak";
-      await rm(bakDir, { recursive: true, force: true });
-      if (existsSync(PUBLIC_DIR)) await rename(PUBLIC_DIR, bakDir);
-      await rename(stageDir, PUBLIC_DIR);
-      await rm(bakDir, { recursive: true, force: true });
+      await swapIntoPlace(stageDir, PUBLIC_DIR);
     }
 
     await runPagefind();
   } catch (err) {
-    // Make sure the failure is always recorded for the admin/status view.
+    // Always surface the failure (appended, so Hugo output isn't hidden).
     status.lastSuccess = false;
-    if (!status.log) status.log = `build error: ${(err as Error).message}`;
+    const msg = (err as Error)?.message || String(err);
+    status.log = status.log ? `${status.log}\n\n[post-build error] ${msg}` : `build error: ${msg}`;
+    console.error("[hugo] build error:", msg);
     throw err;
   } finally {
     status.running = false;
     status.lastRun = new Date().toISOString();
     status.durationMs = Date.now() - start;
+  }
+}
+
+/**
+ * Replace `target` with the freshly built `stageDir`. Fast path is an atomic
+ * rename; if that fails for any reason (cross-device, odd mount, etc.) fall
+ * back to clearing the target and copying the contents in.
+ */
+async function swapIntoPlace(stageDir: string, target: string): Promise<void> {
+  await rm(target, { recursive: true, force: true });
+  try {
+    await rename(stageDir, target);
+    return;
+  } catch {
+    // Cross-device or other rename failure → copy the staged output in instead.
+    await mkdir(target, { recursive: true });
+    await $`cp -a ${stageDir}/. ${target}/`.quiet();
+    await rm(stageDir, { recursive: true, force: true });
   }
 }
 

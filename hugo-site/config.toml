@@ -19,15 +19,16 @@ summaryLength = 30
   category = "categories"
   tag = "tags"
 
-# Filenames are written as "<slug>.md", so :filename is always the slug —
+# Filenames are written as "<slug>.md", so :contentbasename is always the slug —
 # this stays correct even for untitled microblog posts (empty title).
+# (:contentbasename replaces the deprecated :filename token.)
 [permalinks]
-  posts = "/:year/:month/:day/:filename/"
-  articles = "/:year/:month/:day/:filename/"
-  photos = "/:year/:month/:day/:filename/"
-  replies = "/:year/:month/:day/:filename/"
-  bookmarks = "/:year/:month/:day/:filename/"
-  podcasts = "/:year/:month/:day/:filename/"
+  posts = "/:year/:month/:day/:contentbasename/"
+  articles = "/:year/:month/:day/:contentbasename/"
+  photos = "/:year/:month/:day/:contentbasename/"
+  replies = "/:year/:month/:day/:contentbasename/"
+  bookmarks = "/:year/:month/:day/:contentbasename/"
+  podcasts = "/:year/:month/:day/:contentbasename/"
 
 [outputs]
   home = ["HTML", "RSS", "JSON"]
