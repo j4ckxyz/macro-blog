@@ -1,0 +1,11 @@
+{
+  "host": "127.0.0.1:3000",
+  "home_section": "timeline",
+  "search": true,
+  "nav": [
+    { "label": "Archive", "url": "/archive/" },
+    { "label": "Photos", "url": "/photos/" },
+    { "label": "Feed", "url": "/feed.xml" }
+  ],
+  "social": []
+}

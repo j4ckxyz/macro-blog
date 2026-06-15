@@ -2,6 +2,7 @@ import { getConfig } from "../../lib/config.ts";
 import { getToken, getTokenExtra, setReauth } from "../../lib/tokens.ts";
 import type { CrosspostPayload, CrosspostResult } from "./types.ts";
 import type { NormalizedTimelineItem } from "../timeline.ts";
+import { splitPostIntoThread, formatChunkForMastodon } from "./thread.ts";
 
 /** Mark/clear reauth based on an API response status. */
 function checkAuth(status: number): void {
@@ -78,29 +79,55 @@ export async function crosspostMastodon(
     mediaIds.push(await uploadMedia(photo));
   }
 
-  const body: Record<string, unknown> = {
-    status: buildStatus(payload),
-    visibility: "public",
-    language: cfg.site.language || "en",
-  };
-  if (mediaIds.length) body.media_ids = mediaIds;
-
-  const res = await fetchImpl(`${base}/api/v1/statuses`, {
-    method: "POST",
-    headers: {
-      Authorization: authHeader(),
-      "content-type": "application/json",
-      "Idempotency-Key": payload.url,
-    },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    checkAuth(res.status);
-    throw new Error(`mastodon post failed: ${res.status} ${await res.text()}`);
+  let chunks: string[] = [buildStatus(payload)];
+  if (payload.type === "post") {
+    const limit = 480;
+    const bodyText = payload.markdown || payload.text;
+    const threadParts = splitPostIntoThread(bodyText, limit, payload.url, payload.linkBack);
+    chunks = threadParts.map(formatChunkForMastodon);
   }
-  checkAuth(res.status);
-  const json = (await res.json()) as { id: string; url: string; uri: string };
-  return { remoteId: json.id, remoteUrl: json.url || json.uri };
+
+  let parentId: string | undefined = undefined;
+  let firstUrl = "";
+  let firstId = "";
+
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i];
+    const body: Record<string, unknown> = {
+      status: chunk,
+      visibility: "public",
+      language: cfg.site.language || "en",
+    };
+    if (i === 0 && mediaIds.length) {
+      body.media_ids = mediaIds;
+    }
+    if (parentId) {
+      body.in_reply_to_id = parentId;
+    }
+
+    const res = await fetchImpl(`${base}/api/v1/statuses`, {
+      method: "POST",
+      headers: {
+        Authorization: authHeader(),
+        "content-type": "application/json",
+        "Idempotency-Key": i === 0 ? payload.url : `${payload.url}-${i}`,
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      checkAuth(res.status);
+      throw new Error(`mastodon post failed at part ${i + 1}/${chunks.length}: ${res.status} ${await res.text()}`);
+    }
+    checkAuth(res.status);
+    const json = (await res.json()) as { id: string; url: string; uri: string };
+    parentId = json.id;
+    if (i === 0) {
+      firstId = json.id;
+      firstUrl = json.url || json.uri;
+    }
+  }
+
+  return { remoteId: firstId, remoteUrl: firstUrl };
 }
 
 function stripHtml(html: string): string {

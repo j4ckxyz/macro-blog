@@ -85,4 +85,43 @@ describe("Mastodon posting", () => {
     expect(lastStatusBody.status).toBe("cross-posted note");
     expect(lastStatusBody.visibility).toBe("public");
   });
+
+  test("threads a long post via reply chain", async () => {
+    const cfg = getConfig();
+    cfg.crossposting.mastodon.instance_url = base();
+    setConfig(cfg);
+    saveToken("mastodon", { access_token: "tok", extra: { instance: base() } });
+
+    const statusBodies: any[] = [];
+    server?.stop(true);
+    let idCounter = 1000;
+    server = Bun.serve({
+      port: 0,
+      async fetch(req) {
+        const url = new URL(req.url);
+        if (url.pathname === "/api/v1/statuses" && req.method === "POST") {
+          const body = await req.json();
+          statusBodies.push(body);
+          const newId = String(++idCounter);
+          return Response.json({ id: newId, url: `https://mastodon.example/@tester/${newId}`, uri: "x" });
+        }
+        return new Response("not found", { status: 404 });
+      }
+    });
+    // Update config with the new server port
+    cfg.crossposting.mastodon.instance_url = base();
+    setConfig(cfg);
+    saveToken("mastodon", { access_token: "tok", extra: { instance: base() } });
+
+    const longText = "a".repeat(300) + "\n\n" + "b".repeat(300);
+    const payload: CrosspostPayload = { text: longText, markdown: longText, url: "http://127.0.0.1:3000/p/", type: "post", photos: [], linkBack: true };
+    
+    const result = await crosspostMastodon(payload);
+    expect(result.remoteId).toBe("1001");
+    expect(statusBodies.length).toBe(2);
+    expect(statusBodies[0].status).toBe("a".repeat(300));
+    expect(statusBodies[0].in_reply_to_id).toBeUndefined();
+    expect(statusBodies[1].status).toBe("b".repeat(300) + "\n\n🔗 http://127.0.0.1:3000/p/");
+    expect(statusBodies[1].in_reply_to_id).toBe("1001");
+  });
 });

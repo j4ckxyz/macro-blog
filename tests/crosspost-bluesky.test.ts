@@ -1,7 +1,7 @@
 import { test, expect, describe, beforeEach, afterEach } from "bun:test";
 import { Glob } from "bun";
 import { freshDb } from "./helpers.ts";
-import { buildPostRecord, buildFacets, fetchBlueskyReplies, markdownToRichText } from "../src/services/crosspost/bluesky.ts";
+import { buildPostRecord, buildFacets, fetchBlueskyReplies, markdownToRichText, crosspostBluesky } from "../src/services/crosspost/bluesky.ts";
 import { clientMetadata, redirectUri, refreshBlueskyToken } from "../src/routes/oauth/bluesky.ts";
 import { generateDpopKeypair } from "../src/lib/dpop.ts";
 import { getConfig, setConfig } from "../src/lib/config.ts";
@@ -248,5 +248,60 @@ describe("Bluesky token refresh", () => {
     const tok = getToken("bluesky");
     expect(tok!.access_token).toBe("new-token");
     expect(tok!.refresh_token).toBe("new-refresh");
+  });
+});
+
+describe("Bluesky crossposting thread", () => {
+  test("threads a long post via reply parent/root chains", async () => {
+    const postRecords: any[] = [];
+    server = Bun.serve({
+      port: 0,
+      async fetch(req) {
+        const url = new URL(req.url);
+        if (url.pathname === "/xrpc/com.atproto.repo.createRecord" && req.method === "POST") {
+          const body = await req.json();
+          postRecords.push(body.record);
+          const rkey = `rkey-${postRecords.length}`;
+          return Response.json({ uri: `at://did:plc:abc/app.bsky.feed.post/${rkey}`, cid: `cid-${postRecords.length}` });
+        }
+        return new Response("not found", { status: 404 });
+      },
+    });
+
+    const sess = await session();
+    saveToken("bluesky", {
+      access_token: "tok",
+      expires_at: new Date(Date.now() + 3600_000).toISOString(),
+      extra: {
+        dpop_private_jwk: sess.keys.privateJwk,
+        dpop_public_jwk: sess.keys.publicJwk,
+        pds: `http://127.0.0.1:${server.port}`,
+        did: "did:plc:abc",
+        handle: "tester.bsky.social",
+      },
+    });
+
+    const longText = "a".repeat(200) + "\n\n" + "b".repeat(200);
+    const payload: CrosspostPayload = {
+      text: longText,
+      markdown: longText,
+      url: "http://127.0.0.1:3000/p/",
+      type: "post",
+      photos: [],
+      linkBack: true,
+    };
+
+    const result = await crosspostBluesky(payload);
+    expect(result.remoteId).toBe("at://did:plc:abc/app.bsky.feed.post/rkey-1");
+    expect(postRecords.length).toBe(2);
+
+    expect(postRecords[0].text).toBe("a".repeat(200));
+    expect(postRecords[0].reply).toBeUndefined();
+
+    expect(postRecords[1].text).toBe("b".repeat(200) + "\n\n🔗 http://127.0.0.1:3000/p/");
+    expect(postRecords[1].reply.root.uri).toBe("at://did:plc:abc/app.bsky.feed.post/rkey-1");
+    expect(postRecords[1].reply.root.cid).toBe("cid-1");
+    expect(postRecords[1].reply.parent.uri).toBe("at://did:plc:abc/app.bsky.feed.post/rkey-1");
+    expect(postRecords[1].reply.parent.cid).toBe("cid-1");
   });
 });

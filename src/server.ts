@@ -28,6 +28,13 @@ async function bootstrap(): Promise<MacroblogConfig> {
       username: process.env.MACROBLOG_USERNAME || cfg.site.username,
       description: process.env.MACROBLOG_DESCRIPTION || cfg.site.description,
     };
+  } else if (process.env.MACROBLOG_SITE_URL && process.env.MACROBLOG_SITE_URL !== cfg.site.url) {
+    // Domain migration: MACROBLOG_SITE_URL always wins, even on an existing
+    // install. Post permalinks are date+slug based (see config.toml
+    // [permalinks]) so the public path of every post is unchanged — only the
+    // host moves. Change the env var (and your DNS) and restart to migrate.
+    console.log(`[bootstrap] migrating site URL: ${cfg.site.url} → ${process.env.MACROBLOG_SITE_URL}`);
+    patch.site = { ...(patch.site || {}), url: process.env.MACROBLOG_SITE_URL };
   }
   if (!cfg.auth.session_secret) {
     patch.auth = { ...(patch.auth || {}), session_secret: randomToken(48) };

@@ -10,6 +10,12 @@
   {{ $reply := .Site.Params.include_reply_type }}
   {{ $pages := where .Site.RegularPages "Section" "in" (slice "posts" "articles" "photos" "bookmarks" "podcasts") }}
   {{ if $reply }}{{ $pages = .Site.RegularPages }}{{ end }}
+  {{/* Landing section: "timeline" shows everything; a section name narrows the home feed. */}}
+  {{ $home := "timeline" }}
+  {{ with .Site.Data.macroblog }}{{ $home = .home_section | default "timeline" }}{{ end }}
+  {{ if and (ne $home "timeline") (in (slice "posts" "articles" "photos" "bookmarks" "podcasts" "replies") $home) }}
+    {{ $pages = where .Site.RegularPages "Section" $home }}
+  {{ end }}
   {{ range (.Paginate $pages).Pages }}
   {{ partial "post-summary.html" . }}
   {{ end }}

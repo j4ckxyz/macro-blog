@@ -4,6 +4,7 @@ import { dpopFetch, type DpopKeypair } from "../../lib/dpop.ts";
 import { refreshBlueskyToken } from "../../routes/oauth/bluesky.ts";
 import type { CrosspostPayload, CrosspostResult } from "./types.ts";
 import type { NormalizedTimelineItem } from "../timeline.ts";
+import { splitPostIntoThread } from "./thread.ts";
 
 const MAX_GRAPHEMES = 300;
 
@@ -108,7 +109,12 @@ function truncateGraphemes(text: string, max: number): string {
 }
 
 export function markdownToRichText(md: string): { text: string; facets: any[] } {
-  let working = md.trim().replace(/!\[[^\]]*\]\([^)]*\)/g, "");
+  const trimmed = md.trim();
+  if (trimmed.startsWith("```") && trimmed.endsWith("```")) {
+    return { text: trimmed, facets: [] };
+  }
+
+  let working = trimmed.replace(/!\[[^\]]*\]\([^)]*\)/g, "");
 
   working = working
     .replace(/^#{1,6}\s+/gm, "")
@@ -434,19 +440,74 @@ export async function buildPostRecord(
 export async function crosspostBluesky(payload: CrosspostPayload): Promise<CrosspostResult> {
   await ensureFreshToken();
   const session = loadSession();
-  const record = await buildPostRecord(payload, session);
 
-  const result = await xrpc(session, "com.atproto.repo.createRecord", "POST", {
-    repo: session.did,
-    collection: "app.bsky.feed.post",
-    record,
-  });
+  let chunks: string[] = [];
+  if (payload.type === "post") {
+    const limit = 280;
+    const bodyText = payload.markdown || payload.text;
+    chunks = splitPostIntoThread(bodyText, limit, payload.url, payload.linkBack);
+  }
 
-  const uri: string = result.uri; // at://did/app.bsky.feed.post/rkey
-  const rkey = uri.split("/").pop();
-  const handle = getTokenExtra("bluesky").handle || session.did;
-  const remoteUrl = `https://bsky.app/profile/${handle}/post/${rkey}`;
-  return { remoteId: uri, remoteUrl };
+  if (chunks.length <= 1) {
+    const record = await buildPostRecord(payload, session);
+    const result = await xrpc(session, "com.atproto.repo.createRecord", "POST", {
+      repo: session.did,
+      collection: "app.bsky.feed.post",
+      record,
+    });
+    const uri: string = result.uri;
+    const rkey = uri.split("/").pop();
+    const handle = getTokenExtra("bluesky").handle || session.did;
+    const remoteUrl = `https://bsky.app/profile/${handle}/post/${rkey}`;
+    return { remoteId: uri, remoteUrl };
+  }
+
+  let firstUri = "";
+  let firstCid = "";
+  let firstUrl = "";
+  let prevUri = "";
+  let prevCid = "";
+
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i];
+    const chunkPayload: CrosspostPayload = {
+      ...payload,
+      text: chunk,
+      markdown: chunk,
+      photos: i === 0 ? payload.photos : [],
+      linkBack: false,
+    };
+
+    const record = await buildPostRecord(chunkPayload, session);
+    if (i > 0) {
+      record.reply = {
+        root: { uri: firstUri, cid: firstCid },
+        parent: { uri: prevUri, cid: prevCid },
+      };
+    }
+
+    const result = await xrpc(session, "com.atproto.repo.createRecord", "POST", {
+      repo: session.did,
+      collection: "app.bsky.feed.post",
+      record,
+    });
+
+    const uri: string = result.uri;
+    const cid: string = result.cid;
+
+    if (i === 0) {
+      firstUri = uri;
+      firstCid = cid;
+      const rkey = uri.split("/").pop();
+      const handle = getTokenExtra("bluesky").handle || session.did;
+      firstUrl = `https://bsky.app/profile/${handle}/post/${rkey}`;
+    }
+
+    prevUri = uri;
+    prevCid = cid;
+  }
+
+  return { remoteId: firstUri, remoteUrl: firstUrl };
 }
 
 /** Post a reply to a Bluesky post (used by the unified Mentions tab). */
