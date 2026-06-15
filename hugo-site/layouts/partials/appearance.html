@@ -1,4 +1,6 @@
-{{- /* Apply user-chosen font + colours by overriding the theme CSS variables. */ -}}
+{{- /* Light/dark theming. Light vars are the default; dark applies via the OS
+       preference (when mode=auto) and can be forced with the header toggle,
+       which stores the choice in localStorage as data-theme on <html>. */ -}}
 {{- $a := .Site.Params.appearance -}}
 {{- $font := "system" -}}{{- with $a.font }}{{ $font = . }}{{ end -}}
 {{- $stacks := dict
@@ -8,17 +10,35 @@
   "mono" "ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"
   "rounded" "'Avenir Next','Segoe UI',system-ui,sans-serif"
 -}}
-{{- $stack := index $stacks $font -}}
-{{- if not $stack }}{{ $stack = index $stacks "system" }}{{ end -}}
+{{- $stack := index $stacks $font -}}{{- if not $stack }}{{ $stack = index $stacks "system" }}{{ end -}}
+{{- $mode := $a.mode | default "auto" -}}
+{{- $la := $a.lightaccent | default "#111111" -}}{{- $lb := $a.lightbg | default "#ffffff" -}}{{- $lt := $a.lighttext | default "#222426" -}}
+{{- $da := $a.darkaccent | default "#8ab4ff" -}}{{- $db := $a.darkbg | default "#15171a" -}}{{- $dt := $a.darktext | default "#e6e8eb" -}}
 <style>
-:root{
-  --accent: {{ $a.accentcolor | default "#111111" }};
-  --bg: {{ $a.bgcolor | default "#ffffff" }};
-  --ink: {{ $a.textcolor | default "#222426" }};
-  --serif: {{ $stack | safeCSS }};
-  --user-font: {{ $stack | safeCSS }};
-}
-body{ font-family: var(--user-font); color: var(--ink); background: var(--bg); }
-a{ color: var(--accent); }
-.site-name, .p-category{ color: var(--accent); }
+:root{ --user-font: {{ $stack | safeCSS }}; --accent: {{ $la }}; --bg: {{ $lb }}; --ink: {{ $lt }}; --rule: rgba(128,128,128,.18); --muted:#6b7280; }
+{{ if ne $mode "light" }}@media (prefers-color-scheme: dark){
+  html:not([data-theme="light"]){ --accent: {{ $da }}; --bg: {{ $db }}; --ink: {{ $dt }}; --muted:#9aa3ad; }
+}{{ end }}
+html[data-theme="dark"]{ --accent: {{ $da }}; --bg: {{ $db }}; --ink: {{ $dt }}; --muted:#9aa3ad; }
+html[data-theme="light"]{ --accent: {{ $la }}; --bg: {{ $lb }}; --ink: {{ $lt }}; --muted:#6b7280; }
+body{ font-family: var(--user-font); color: var(--ink); background: var(--bg); transition: background .2s,color .2s; }
+a, .site-name, .p-category{ color: var(--accent); }
+.theme-toggle{ background:none;border:1px solid var(--rule);color:var(--muted);border-radius:8px;width:34px;height:30px;cursor:pointer;font-size:14px;line-height:1 }
+.theme-toggle:hover{ color:var(--ink) }
 </style>
+<script>
+(function(){
+  var forced = {{ if eq $mode "light" }}"light"{{ else if eq $mode "dark" }}"dark"{{ else }}null{{ end }};
+  var saved = null; try { saved = localStorage.getItem("mb-theme"); } catch(e){}
+  var t = saved || forced;
+  if (t) document.documentElement.setAttribute("data-theme", t);
+  window.__mbCycleTheme = function(){
+    var cur = document.documentElement.getAttribute("data-theme");
+    var mq = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+    // cycle: auto -> light -> dark -> auto
+    var next = !cur ? "light" : (cur === "light" ? "dark" : null);
+    if (next) { document.documentElement.setAttribute("data-theme", next); try{localStorage.setItem("mb-theme", next);}catch(e){} }
+    else { document.documentElement.removeAttribute("data-theme"); try{localStorage.removeItem("mb-theme");}catch(e){} }
+  };
+})();
+</script>

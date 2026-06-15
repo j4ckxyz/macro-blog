@@ -52,8 +52,12 @@ microblog:
   ping_url: "https://micro.blog/ping"
 
 appearance:
-  # All editable from the admin (Settings → Appearance).
+  # All editable from the admin (Settings → Appearance), with a live preview.
   font: "system"                       # system | sans | serif | mono | rounded
-  accent_color: "#111111"
-  background_color: "#ffffff"
-  text_color: "#222426"
+  mode: "auto"                         # auto (follow device) | light | dark
+  light_accent: "#111111"
+  light_background: "#ffffff"
+  light_text: "#222426"
+  dark_accent: "#8ab4ff"
+  dark_background: "#15171a"
+  dark_text: "#e6e8eb"
