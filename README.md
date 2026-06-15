@@ -354,6 +354,26 @@ src/
 hugo-site/             Hugo root (config, default theme, content, data)
 ```
 
+## Troubleshooting
+
+**The admin works but the public site 404s.** The Hugo build is failing.
+Builds are atomic (a failed build can't take the live site down), so check the
+error:
+
+```bash
+# Docker
+docker compose logs macroblog | grep -A 30 "build FAILED"
+# or non-Docker (systemd)
+journalctl -u macroblog | grep -A 30 "build FAILED"
+```
+
+Then trigger a rebuild from the admin (**Settings → Rebuild site**) or
+`docker compose restart macroblog`.
+
+**Behind Cloudflare Tunnel / a reverse proxy:** make sure `MACROBLOG_SITE_URL`
+(Docker) or `site.url` (config) is your real `https://` domain, then rebuild so
+Hugo emits the right absolute URLs.
+
 ## Credits
 
 - [Bun](https://bun.sh), [Hono](https://hono.dev), [Hugo](https://gohugo.io)
