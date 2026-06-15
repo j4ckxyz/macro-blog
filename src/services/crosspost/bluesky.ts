@@ -1,4 +1,5 @@
 import { getToken, getTokenExtra, saveToken, setReauth } from "../../lib/tokens.ts";
+import { getConfig } from "../../lib/config.ts";
 import { dpopFetch, type DpopKeypair } from "../../lib/dpop.ts";
 import { refreshBlueskyToken } from "../../routes/oauth/bluesky.ts";
 import type { CrosspostPayload, CrosspostResult } from "./types.ts";
@@ -106,6 +107,134 @@ function truncateGraphemes(text: string, max: number): string {
   return chars.slice(0, max - 1).join("") + "…";
 }
 
+export function markdownToRichText(md: string): { text: string; facets: any[] } {
+  let working = md.replace(/!\[[^\]]*\]\([^)]*\)/g, "");
+
+  working = working
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^>\s?/gm, "")
+    .replace(/(\*\*|__)(.*?)\1/g, "$2")
+    .replace(/(\*|_)(.*?)\1/g, "$2")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\r/g, "");
+
+  const facets: any[] = [];
+  const encoder = new TextEncoder();
+  let resultText = "";
+  let lastIndex = 0;
+
+  const linkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = linkRegex.exec(working)) !== null) {
+    const beforeText = working.slice(lastIndex, match.index);
+    resultText += beforeText;
+
+    const linkText = match[1];
+    const linkUrl = match[2];
+
+    const byteStart = encoder.encode(resultText).length;
+    resultText += linkText;
+    const byteEnd = encoder.encode(resultText).length;
+
+    facets.push({
+      index: { byteStart, byteEnd },
+      features: [{ $type: "app.bsky.richtext.facet#link", uri: linkUrl }],
+    });
+
+    lastIndex = linkRegex.lastIndex;
+  }
+
+  resultText += working.slice(lastIndex);
+
+  const rawFacets = buildFacets(resultText);
+  for (const raw of rawFacets) {
+    const start = raw.index.byteStart;
+    const end = raw.index.byteEnd;
+    const overlap = facets.some(f => (start >= f.index.byteStart && start < f.index.byteEnd) || (end > f.index.byteStart && end <= f.index.byteEnd));
+    if (!overlap) {
+      facets.push(raw);
+    }
+  }
+
+  facets.sort((a, b) => a.index.byteStart - b.index.byteStart);
+
+  return { text: resultText.trim(), facets };
+}
+
+function truncateRichText(text: string, facets: any[], max: number): { text: string; facets: any[] } {
+  const chars = Array.from(text);
+  if (chars.length <= max) return { text, facets };
+  
+  const truncatedText = chars.slice(0, max - 1).join("") + "…";
+  const encoder = new TextEncoder();
+  const maxByteLen = encoder.encode(truncatedText).length;
+
+  const adjustedFacets = facets
+    .map(f => {
+      if (f.index.byteStart >= maxByteLen) return null;
+      const byteEnd = Math.min(f.index.byteEnd, maxByteLen);
+      if (byteEnd <= f.index.byteStart) return null;
+      return {
+        ...f,
+        index: { byteStart: f.index.byteStart, byteEnd },
+      };
+    })
+    .filter(Boolean) as any[];
+
+  return { text: truncatedText, facets: adjustedFacets };
+}
+
+interface LinkMetadata {
+  title: string;
+  description: string;
+  imageUrl?: string;
+}
+
+async function fetchLinkMetadata(url: string): Promise<LinkMetadata> {
+  try {
+    const res = await fetch(url, { headers: { "User-Agent": "Macroblog/1.0" } });
+    if (!res.ok) return { title: "", description: "" };
+    const html = await res.text();
+    
+    let title = "";
+    const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
+    if (titleMatch) title = titleMatch[1].trim();
+
+    const ogTitleMatch = html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']/i) ||
+                         html.match(/<meta\s+content=["']([^"']+)["']\s+property=["']og:title["']/i);
+    if (ogTitleMatch) title = ogTitleMatch[1].trim();
+
+    let description = "";
+    const descMatch = html.match(/<meta\s+name=["']description["']\s+content=["']([^"']+)["']/i) ||
+                      html.match(/<meta\s+content=["']([^"']+)["']\s+name=["']description["']/i);
+    if (descMatch) description = descMatch[1].trim();
+
+    const ogDescMatch = html.match(/<meta\s+property=["']og:description["']\s+content=["']([^"']+)["']/i) ||
+                        html.match(/<meta\s+content=["']([^"']+)["']\s+property=["']og:description["']/i);
+    if (ogDescMatch) description = ogDescMatch[1].trim();
+
+    let imageUrl: string | undefined;
+    const ogImageMatch = html.match(/<meta\s+property=["']og:image["']\s+content=["']([^"']+)["']/i) ||
+                         html.match(/<meta\s+content=["']([^"']+)["']\s+property=["']og:image["']/i);
+    if (ogImageMatch) imageUrl = ogImageMatch[1].trim();
+
+    if (imageUrl && !/^https?:\/\//.test(imageUrl)) {
+      imageUrl = new URL(imageUrl, url).toString();
+    }
+
+    return { title, description, imageUrl };
+  } catch (err) {
+    console.error(`[bluesky] failed to fetch link metadata for ${url}:`, err);
+    return { title: "", description: "" };
+  }
+}
+
+function absolutize(url: string): string {
+  if (/^https?:\/\//.test(url)) return url;
+  return getConfig().site.url.replace(/\/+$/, "") + (url.startsWith("/") ? url : "/" + url);
+}
+
 async function uploadBlob(session: BlueskySession, url: string): Promise<any> {
   const fileRes = await fetch(url);
   if (!fileRes.ok) throw new Error(`failed to fetch image ${url}`);
@@ -152,6 +281,8 @@ export async function buildPostRecord(
     return record;
   }
 
+  let { text, facets } = markdownToRichText(payload.markdown || payload.text);
+
   const hasVideo = payload.photos.some(p => p.url.match(/\.(mp4|webm|ogg|mov)$/i));
   if (payload.photos.length && !hasVideo) {
     const images = [];
@@ -167,22 +298,23 @@ export async function buildPostRecord(
       images.push(imgObj);
     }
     
-    let text = payload.text;
-    let facets = [];
     if (linkBack) {
-      text = truncateGraphemes(text, MAX_GRAPHEMES - 3);
+      const truncated = truncateRichText(text, facets, MAX_GRAPHEMES - 3);
+      text = truncated.text;
+      facets = truncated.facets;
+      
       const encoder = new TextEncoder();
       const byteStart = encoder.encode(text + " ").length;
       const byteEnd = byteStart + encoder.encode("🔗").length;
       text += " 🔗";
-      facets = buildFacets(text);
       facets.push({
         index: { byteStart, byteEnd },
         features: [{ $type: "app.bsky.richtext.facet#link", uri: payload.url }],
       });
     } else {
-      text = truncateGraphemes(text, MAX_GRAPHEMES);
-      facets = buildFacets(text);
+      const truncated = truncateRichText(text, facets, MAX_GRAPHEMES);
+      text = truncated.text;
+      facets = truncated.facets;
     }
 
     record.text = text;
@@ -192,22 +324,23 @@ export async function buildPostRecord(
   }
 
   if (hasVideo) {
-    let text = payload.text;
-    let facets = [];
     if (linkBack) {
-      text = truncateGraphemes(text, MAX_GRAPHEMES - 3);
+      const truncated = truncateRichText(text, facets, MAX_GRAPHEMES - 3);
+      text = truncated.text;
+      facets = truncated.facets;
+      
       const encoder = new TextEncoder();
       const byteStart = encoder.encode(text + " ").length;
       const byteEnd = byteStart + encoder.encode("🔗").length;
       text += " 🔗";
-      facets = buildFacets(text);
       facets.push({
         index: { byteStart, byteEnd },
         features: [{ $type: "app.bsky.richtext.facet#link", uri: payload.url }],
       });
     } else {
-      text = truncateGraphemes(text, MAX_GRAPHEMES);
-      facets = buildFacets(text);
+      const truncated = truncateRichText(text, facets, MAX_GRAPHEMES);
+      text = truncated.text;
+      facets = truncated.facets;
     }
 
     record.text = text;
@@ -224,15 +357,14 @@ export async function buildPostRecord(
   }
 
   if (linkBack) {
-    let text = payload.text;
-    if (Array.from(text).length > MAX_GRAPHEMES - 3) {
-      text = truncateGraphemes(text, MAX_GRAPHEMES - 3);
-    }
+    const truncated = truncateRichText(text, facets, MAX_GRAPHEMES - 3);
+    text = truncated.text;
+    facets = truncated.facets;
+    
     const encoder = new TextEncoder();
     const byteStart = encoder.encode(text + " ").length;
     const byteEnd = byteStart + encoder.encode("🔗").length;
     text += " 🔗";
-    const facets = buildFacets(text);
     facets.push({
       index: { byteStart, byteEnd },
       features: [{ $type: "app.bsky.richtext.facet#link", uri: payload.url }],
@@ -240,20 +372,60 @@ export async function buildPostRecord(
     record.text = text;
     record.facets = facets;
   } else {
-    // Short note (possibly truncated with a "read more" link).
-    if (Array.from(payload.text).length > MAX_GRAPHEMES) {
-      const text = truncateGraphemes(`${payload.text}\n\n${payload.url}`, MAX_GRAPHEMES);
-      record.text = text;
-      record.facets = buildFacets(text);
+    if (Array.from(text).length > MAX_GRAPHEMES) {
+      const truncated = truncateRichText(text + `\n\n${payload.url}`, facets, MAX_GRAPHEMES);
+      record.text = truncated.text;
+      record.facets = truncated.facets;
       record.embed = {
         $type: "app.bsky.embed.external",
         external: { uri: payload.url, title: payload.title ?? "Read more", description: "" },
       };
     } else {
-      record.text = payload.text;
-      record.facets = buildFacets(payload.text);
+      record.text = text;
+      record.facets = facets;
     }
   }
+
+  // If linking anything, and no media attached, add the embed image card for bluesky posts.
+  if (!record.embed) {
+    const linkFeatures = facets.flatMap(f => f.features || []).filter(feat => feat.$type === "app.bsky.richtext.facet#link");
+    const firstLinkUrl = linkFeatures.length > 0 ? linkFeatures[0].uri : null;
+    
+    if (firstLinkUrl) {
+      let meta: LinkMetadata;
+      if (firstLinkUrl === payload.url) {
+        const bannerUrl = getConfig().site.banner || getConfig().site.avatar || "";
+        meta = {
+          title: payload.title || getConfig().site.title,
+          description: truncateGraphemes(payload.text, 200),
+          imageUrl: bannerUrl ? absolutize(bannerUrl) : undefined,
+        };
+      } else {
+        meta = await fetchLinkMetadata(firstLinkUrl);
+      }
+      
+      const external: any = {
+        uri: firstLinkUrl,
+        title: meta.title || "Link",
+        description: meta.description || "",
+      };
+      
+      if (meta.imageUrl) {
+        try {
+          const thumbBlob = await uploadBlob(session, meta.imageUrl);
+          external.thumb = thumbBlob;
+        } catch (err) {
+          console.error(`[bluesky] failed to upload link thumbnail ${meta.imageUrl}:`, err);
+        }
+      }
+      
+      record.embed = {
+        $type: "app.bsky.embed.external",
+        external,
+      };
+    }
+  }
+
   return record;
 }
 

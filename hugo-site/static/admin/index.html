@@ -376,6 +376,15 @@
   async function boot(){
     if(!token){ renderLogin(); return; }
     try{ cfg = await (await api("/api/config")).json(); }catch(e){ return; }
+    if (cfg && cfg.site && cfg.site.avatar) {
+      let fav = document.querySelector('link[rel="icon"]');
+      if (!fav) {
+        fav = document.createElement('link');
+        fav.rel = 'icon';
+        document.head.appendChild(fav);
+      }
+      fav.href = cfg.site.avatar;
+    }
     active = viewFromPath();
     renderApp();
   }
@@ -1218,6 +1227,14 @@
       const d=await (await api("/api/media",{method:"POST",body:fd})).json();
       if(d.url){ avatarUrl=d.url; avatarImg.src=d.url; avatarImg.style.visibility="visible"; }
     }});
+    let bannerUrl=c.site.banner||"";
+    const bannerImg=h("img",{src:bannerUrl,alt:"",style:"width:120px;height:64px;border-radius:8px;object-fit:cover;background:#eee",onerror:"this.style.visibility='hidden'"});
+    if(!bannerUrl) bannerImg.style.visibility="hidden";
+    const bannerFile=h("input",{type:"file",accept:"image/*",style:"display:none",onchange:async e=>{
+      const fl=e.target.files[0]; if(!fl) return; const fd=new FormData(); fd.set("file",fl);
+      const d=await (await api("/api/media",{method:"POST",body:fd})).json();
+      if(d.url){ bannerUrl=d.url; bannerImg.src=d.url; bannerImg.style.visibility="visible"; }
+    }});
     const fontSel=h("select",{},...[["system","System default"],["sans","Sans-serif"],["serif","Serif"],["mono","Monospace"],["rounded","Rounded"]].map(([v,l])=>{const o=h("option",{value:v},l);if(v===ap.font)o.selected=true;return o;}));
     const modeSel=h("select",{},...[["auto","Auto (follow device)"],["light","Always light"],["dark","Always dark"]].map(([v,l])=>{const o=h("option",{value:v},l);if(v===(ap.mode||"auto"))o.selected=true;return o;}));
     const colorInput=v=>h("input",{type:"color",value:v||"#000000",style:"width:48px;height:34px;border:1px solid var(--input-border);border-radius:8px;padding:2px;background:var(--input-bg)"});
@@ -1243,7 +1260,7 @@
 
     const save=async()=>{
       await api("/api/config",{method:"PUT",json:{
-        site:{title:title.value,description:desc.value,author:author.value,username:username.value,url:url.value,avatar:avatarUrl},
+        site:{title:title.value,description:desc.value,author:author.value,username:username.value,url:url.value,avatar:avatarUrl,banner:bannerUrl},
         feeds:{posts_per_page:Number(perPage.value),include_reply_type:inclReply.checked},
         webmentions:{receive:wmRecv.checked,send:wmSend.checked,moderation:wmMod.checked},
         crossposting:{bluesky:{enabled:bsEnabled.checked,handle:bsHandle.value},mastodon:{enabled:mEnabled.checked,instance_url:mInst.value}},
@@ -1315,6 +1332,9 @@
       h("div",{class:"field"},h("label",{},"Profile photo"),
         h("div",{style:"display:flex;align-items:center;gap:12px"}, avatarImg,
           h("button",{class:"btn secondary",style:"padding:8px 14px",onclick:()=>avatarFile.click()},"Upload photo"), avatarFile)),
+      h("div",{class:"field"},h("label",{},"Banner photo (Open Graph fallback card)"),
+        h("div",{style:"display:flex;align-items:center;gap:12px"}, bannerImg,
+          h("button",{class:"btn secondary",style:"padding:8px 14px",onclick:()=>bannerFile.click()},"Upload banner"), bannerFile)),
       f("Font",fontSel),
       f("Light / dark mode",modeSel),
       h("div",{class:"field"},h("label",{},"Light mode colours"),

@@ -1,7 +1,7 @@
 import { test, expect, describe, beforeEach, afterEach } from "bun:test";
 import { Glob } from "bun";
 import { freshDb } from "./helpers.ts";
-import { buildPostRecord, buildFacets, fetchBlueskyReplies } from "../src/services/crosspost/bluesky.ts";
+import { buildPostRecord, buildFacets, fetchBlueskyReplies, markdownToRichText } from "../src/services/crosspost/bluesky.ts";
 import { clientMetadata, redirectUri, refreshBlueskyToken } from "../src/routes/oauth/bluesky.ts";
 import { generateDpopKeypair } from "../src/lib/dpop.ts";
 import { getConfig, setConfig } from "../src/lib/config.ts";
@@ -88,6 +88,63 @@ describe("Bluesky record building", () => {
     expect(record.embed.external.uri).toBe("http://127.0.0.1:3000/vid/");
     expect(record.embed.external.title).toBe("Video Post");
     expect(record.embed.external.description).toBe("watch my video");
+  });
+
+  test("markdownToRichText parses links and builds facets", () => {
+    const { text, facets } = markdownToRichText("see [example](https://example.com) now");
+    expect(text).toBe("see example now");
+    expect(facets.length).toBe(1);
+    expect(facets[0].features[0].uri).toBe("https://example.com");
+    expect(facets[0].index.byteStart).toBe(4);
+    expect(facets[0].index.byteEnd).toBe(11);
+  });
+
+  test("link post with no media → fetches og metadata and attaches external embed", async () => {
+    let metadataFetched = false;
+    let uploadHits = 0;
+    server = Bun.serve({
+      port: 0,
+      fetch(req) {
+        const url = new URL(req.url);
+        if (url.pathname === "/target-page") {
+          metadataFetched = true;
+          return new Response(`
+            <html>
+              <head>
+                <title>Target Title</title>
+                <meta property="og:description" content="Target Description" />
+                <meta property="og:image" content="http://127.0.0.1:${server.port}/og-image.jpg" />
+              </head>
+            </html>
+          `);
+        }
+        if (url.pathname === "/og-image.jpg") {
+          return new Response(new Uint8Array([9, 9, 9]), { headers: { "content-type": "image/jpeg" } });
+        }
+        if (url.pathname === "/xrpc/com.atproto.repo.uploadBlob") {
+          uploadHits++;
+          return Response.json({ blob: { $type: "blob", ref: { $link: "og-blob-ref" }, mimeType: "image/jpeg", size: 3 } });
+        }
+        return new Response("404", { status: 404 });
+      },
+    });
+
+    const sess = await session();
+    const payload: CrosspostPayload = {
+      text: `check out [link](http://127.0.0.1:${server.port}/target-page)`,
+      url: "http://127.0.0.1:3000/mypost/",
+      type: "post",
+      photos: [],
+    };
+
+    const record = await buildPostRecord(payload, sess);
+    expect(metadataFetched).toBe(true);
+    expect(uploadHits).toBe(1);
+    expect(record.embed.$type).toBe("app.bsky.embed.external");
+    expect(record.embed.external.uri).toBe(`http://127.0.0.1:${server.port}/target-page`);
+    expect(record.embed.external.title).toBe("Target Title");
+    expect(record.embed.external.description).toBe("Target Description");
+    expect(record.embed.external.thumb.ref.$link).toBe("og-blob-ref");
   });
 
   test("buildFacets produces byte-indexed link facets", () => {

@@ -89,6 +89,7 @@ async function doFullBuild(): Promise<void> {
           HUGO_PARAMS_THEME_SECONDS: themeSeconds,
           HUGO_PARAMS_DESCRIPTION: cfg.site.description,
           HUGO_PARAMS_AVATAR: cfg.site.avatar,
+          HUGO_PARAMS_BANNER: cfg.site.banner || "",
           HUGO_PARAMS_AUTHOR_NAME: cfg.site.author,
           HUGO_PARAMS_AUTHOR_USERNAME: cfg.site.username,
           HUGO_PARAMS_INCLUDE_REPLY_TYPE: String(cfg.feeds.include_reply_type),

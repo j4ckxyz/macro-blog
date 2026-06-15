@@ -9,6 +9,7 @@ export interface CrosspostPhoto {
 
 export interface CrosspostPayload {
   text: string; // plain-text content (markdown stripped)
+  markdown?: string; // original markdown content
   url: string; // canonical permalink
   title?: string;
   type: PostType;

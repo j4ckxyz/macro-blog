@@ -8,3 +8,27 @@
 {{- end }}
 <link rel="alternate" type="application/rss+xml" href="{{ .Site.BaseURL }}feed.xml" title="{{ .Site.Title }}" />
 <link rel="alternate" type="application/json" href="{{ .Site.BaseURL }}feed.json" title="{{ .Site.Title }}" />
+
+{{- /* Favicon / Avatar setup */ -}}
+{{- with .Site.Params.avatar }}
+<link rel="icon" href="{{ . }}" />
+<link rel="apple-touch-icon" href="{{ . }}" />
+{{- end }}
+
+{{- /* Open Graph Tags */ -}}
+<meta property="og:title" content="{{ if .IsHome }}{{ .Site.Title }}{{ else }}{{ .Title | default .Site.Title }}{{ end }}" />
+<meta property="og:type" content="{{ if .IsPage }}article{{ else }}website{{ end }}" />
+<meta property="og:url" content="{{ .Permalink }}" />
+{{- with .Description | default .Site.Params.description }}
+<meta property="og:description" content="{{ . }}" />
+{{- end }}
+{{- if .Params.photos }}
+  {{- range first 1 .Params.photos }}
+    <meta property="og:image" content="{{ .url | absURL }}" />
+  {{- end }}
+{{- else if .Site.Params.banner }}
+  <meta property="og:image" content="{{ .Site.Params.banner | absURL }}" />
+{{- else if .Site.Params.avatar }}
+  <meta property="og:image" content="{{ .Site.Params.avatar | absURL }}" />
+{{- end }}
+<meta name="twitter:card" content="summary_large_image" />

@@ -85,6 +85,7 @@ export async function buildPayload(post: PostRow): Promise<CrosspostPayload> {
 
   return {
     text: markdownToText(body),
+    markdown: body,
     url: permalink,
     title: frontMatter.title || undefined,
     type: post.post_type as PostType,

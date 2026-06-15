@@ -12,6 +12,7 @@ export interface SiteConfig {
   username: string;
   description: string;
   avatar: string;
+  banner?: string;
   language: string;
   timezone: string;
 }
@@ -102,6 +103,7 @@ const DEFAULTS: MacroblogConfig = {
     username: "author",
     description: "",
     avatar: "/uploads/avatar.jpg",
+    banner: "",
     language: "en",
     timezone: "UTC",
   },
