@@ -155,6 +155,25 @@ describe("Bluesky record building", () => {
     expect(facets[0].index.byteStart).toBe(4);
     expect(facets[0].index.byteEnd).toBe(4 + "https://example.com".length);
   });
+
+  test("custom language or default language is set on the record", async () => {
+    const payload1: CrosspostPayload = { text: "hello", url: "http://x", type: "post", photos: [], lang: "fr" };
+    const record1 = await buildPostRecord(payload1, await session());
+    expect(record1.langs).toEqual(["fr"]);
+
+    const cfg = getConfig();
+    const origLang = cfg.site.language;
+    cfg.site.language = "ja";
+    setConfig(cfg);
+    try {
+      const payload2: CrosspostPayload = { text: "hello", url: "http://x", type: "post", photos: [] };
+      const record2 = await buildPostRecord(payload2, await session());
+      expect(record2.langs).toEqual(["ja"]);
+    } finally {
+      cfg.site.language = origLang;
+      setConfig(cfg);
+    }
+  });
 });
 
 describe("Bluesky OAuth config safety", () => {

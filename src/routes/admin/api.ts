@@ -107,6 +107,7 @@ adminApi.post("/posts", async (c) => {
   };
   if (b.bookmark_folder) (create as any).bookmark_folder = b.bookmark_folder;
   if (b.link_back !== undefined) (create as any).link_back = b.link_back === true;
+  if (b.lang !== undefined) (create as any).lang = b.lang;
 
   // Re-derive type when caller did not force one.
   if (!b.type) {
@@ -143,6 +144,7 @@ adminApi.put("/posts/:slug", async (c) => {
   if (b.photos !== undefined) replace.photos = b.photos;
   if (b.bookmark_folder !== undefined) replace.bookmark_folder = [b.bookmark_folder];
   if (b.link_back !== undefined) replace.link_back = [b.link_back];
+  if (b.lang !== undefined) replace.lang = [b.lang];
 
   await updatePost(post, { replace });
   if (Array.isArray(b.syndicate_to) && b.syndicate_to.length) {

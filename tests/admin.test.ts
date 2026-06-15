@@ -41,6 +41,25 @@ describe("Admin API: posts + config", () => {
     expect(list.posts.length).toBe(1);
   });
 
+  test("creates a post with custom language and updates it", async () => {
+    const res = await app.request("/api/posts", {
+      method: "POST", headers: auth({ "content-type": "application/json" }),
+      body: JSON.stringify({ content: "Bonjour", type: "post", lang: "fr" }),
+    });
+    expect(res.status).toBe(201);
+    const created = await res.json();
+    expect(created.front_matter.lang).toBe("fr");
+
+    // Now update the language of the post
+    const updateRes = await app.request(`/api/posts/${created.slug}`, {
+      method: "PUT", headers: auth({ "content-type": "application/json" }),
+      body: JSON.stringify({ lang: "es" }),
+    });
+    expect(updateRes.status).toBe(200);
+    const updated = await updateRes.json();
+    expect(updated.front_matter.lang).toBe("es");
+  });
+
   test("config PUT never writes auth secrets", async () => {
     const res = await app.request("/api/config", {
       method: "PUT", headers: auth({ "content-type": "application/json" }),

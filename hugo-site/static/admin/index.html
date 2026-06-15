@@ -762,10 +762,18 @@
     };
     bookmarkFolderSelect.addEventListener("change", e => { selectedFolder = e.target.value; });
 
+    const postLang = h("input", {
+      type: "text",
+      placeholder: "e.g. en, fr, ja",
+      style: "border:1px solid var(--input-border);border-radius:8px;padding:8px 10px;font-size:14px;width:100%;margin-top:4px;",
+      value: (cfg && cfg.site && cfg.site.language) || "en"
+    });
+
     const menu=h("div",{class:"menu",style:"display:none"},
       h("div",{class:"menu-label"},"Post type"), types,
       bookmarkRow,
       h("div",{class:"menu-label", style: "margin-top:8px"},"Bookmark Folder"), bookmarkFolderSelect,
+      h("div",{class:"menu-label", style: "margin-top:8px"},"Language"), postLang,
       h("div",{class:"menu-label"},"Schedule"), sched);
 
     const dots=h("button",{class:"dots",title:"Options",html:"⋯",onclick:()=>{menu.style.display=menu.style.display==="none"?"block":"none";}});
@@ -808,6 +816,11 @@
           linkBack = data.front_matter.link_back !== false;
           lbCb.checked = linkBack;
         }
+        if (data.front_matter.lang) {
+          postLang.value = data.front_matter.lang;
+        } else {
+          postLang.value = (cfg && cfg.site && cfg.site.language) || "en";
+        }
         if (data.front_matter.photos) {
           for (const photo of data.front_matter.photos) {
             photos.push(photo);
@@ -839,7 +852,8 @@
         published:sched.value?new Date(sched.value).toISOString():undefined,
         syndicate_to:[...syndicate],
         link_back: linkBack,
-        bookmark_folder: type==="bookmark" ? selectedFolder : undefined
+        bookmark_folder: type==="bookmark" ? selectedFolder : undefined,
+        lang: postLang.value || undefined
       };
       
       let r;
@@ -857,6 +871,7 @@
           setTimeout(() => navigate("posts"), 1000);
         } else {
           editor.value="";title.value="";tags.value="";photos.length=0;photoList.innerHTML="";count.textContent="0/300";menu.style.display="none";
+          postLang.value = (cfg && cfg.site && cfg.site.language) || "en";
         }
       }
       else toast.textContent="Error: "+(await r.text());
@@ -1424,7 +1439,7 @@
     const inp=v=>h("input",{type:"text",value:v??""});
     const chk=v=>{const x=h("input",{type:"checkbox"});x.checked=!!v;return x;};
 
-    const title=inp(c.site.title),desc=inp(c.site.description),author=inp(c.site.author),username=inp(c.site.username),url=inp(c.site.url);
+    const title=inp(c.site.title),desc=inp(c.site.description),author=inp(c.site.author),username=inp(c.site.username),url=inp(c.site.url),language=inp(c.site.language);
     const perPage=inp(c.feeds.posts_per_page),inclReply=chk(c.feeds.include_reply_type);
     const wmRecv=chk(c.webmentions.receive),wmSend=chk(c.webmentions.send),wmMod=chk(c.webmentions.moderation);
     const bsEnabled=chk(c.crossposting.bluesky.enabled),bsHandle=inp(c.crossposting.bluesky.handle);
@@ -1473,7 +1488,7 @@
 
     const save=async()=>{
       await api("/api/config",{method:"PUT",json:{
-        site:{title:title.value,description:desc.value,author:author.value,username:username.value,url:url.value,avatar:avatarUrl,banner:bannerUrl},
+        site:{title:title.value,description:desc.value,author:author.value,username:username.value,url:url.value,avatar:avatarUrl,banner:bannerUrl,language:language.value},
         feeds:{posts_per_page:Number(perPage.value),include_reply_type:inclReply.checked},
         webmentions:{receive:wmRecv.checked,send:wmSend.checked,moderation:wmMod.checked},
         crossposting:{bluesky:{enabled:bsEnabled.checked,handle:bsHandle.value},mastodon:{enabled:mEnabled.checked,instance_url:mInst.value}},
@@ -1540,7 +1555,7 @@
 
     view.append(h("h2",{class:"section"},"Settings"),
       h("h3",{class:"sub"},"Site"),
-      f("Title",title),f("Description",desc),f("Author",author),f("Username",username),f("Public URL",url),
+      f("Title",title),f("Description",desc),f("Author",author),f("Username",username),f("Public URL",url),f("Language (e.g. en, fr, ja)",language),
       h("h3",{class:"sub"},"Appearance"),
       h("div",{class:"field"},h("label",{},"Profile photo"),
         h("div",{style:"display:flex;align-items:center;gap:12px"}, avatarImg,

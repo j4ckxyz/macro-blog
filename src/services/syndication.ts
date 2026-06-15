@@ -92,6 +92,7 @@ export async function buildPayload(post: PostRow): Promise<CrosspostPayload> {
     photos,
     inReplyTo: frontMatter.reply_to_url || undefined,
     linkBack,
+    lang: frontMatter.lang || undefined,
   };
 }
 

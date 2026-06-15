@@ -16,6 +16,7 @@ export interface CrosspostPayload {
   photos: CrosspostPhoto[];
   inReplyTo?: string;
   linkBack?: boolean;
+  lang?: string;
 }
 
 export interface CrosspostResult {

@@ -259,9 +259,11 @@ export async function buildPostRecord(
   payload: CrosspostPayload,
   session: BlueskySession,
 ): Promise<any> {
+  const lang = payload.lang || getConfig().site.language || "en";
   const record: any = {
     $type: "app.bsky.feed.post",
     createdAt: new Date().toISOString(),
+    langs: [lang],
   };
 
   const linkBack = payload.linkBack === true;

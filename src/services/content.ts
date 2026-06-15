@@ -36,6 +36,9 @@ export interface FrontMatter {
   bookshelf?: string;
   bookmark_url?: string;
   bookmark_title?: string;
+  bookmark_folder?: string;
+  link_back?: boolean;
+  lang?: string;
   draft?: boolean;
   [key: string]: any;
 }
@@ -86,6 +89,7 @@ export function serializeFrontMatter(fm: FrontMatter): string {
   if (fm.bookmark_title) lines.push(`bookmark_title = ${tomlString(fm.bookmark_title)}`);
   if (fm.bookmark_folder) lines.push(`bookmark_folder = ${tomlString(fm.bookmark_folder)}`);
   if (fm.link_back !== undefined) lines.push(`link_back = ${fm.link_back ? "true" : "false"}`);
+  if (fm.lang) lines.push(`lang = ${tomlString(fm.lang)}`);
   lines.push(`draft = ${fm.draft ? "true" : "false"}`);
   lines.push("+++");
   return lines.join("\n");
@@ -194,6 +198,7 @@ function buildFrontMatter(req: MicropubCreate, date: Date): FrontMatter {
     date: date.toISOString().replace(/\.\d{3}Z$/, "Z"),
     type: req.type,
     categories: req.categories,
+    lang: (req as any).lang || getConfig().site.language || "en",
     draft: req.status === "draft",
   };
   if (req.inReplyTo) {
@@ -420,6 +425,7 @@ function normaliseFm(fm: Record<string, any>, type: PostType): FrontMatter {
     bookmark_title: fm.bookmark_title,
     bookmark_folder: fm.bookmark_folder,
     link_back: fm.link_back !== undefined ? (fm.link_back === true || fm.link_back === "true") : undefined,
+    lang: fm.lang,
     draft: fm.draft === true || fm.draft === "true",
   };
 }
