@@ -1,0 +1,24 @@
+{{- /* Apply user-chosen font + colours by overriding the theme CSS variables. */ -}}
+{{- $a := .Site.Params.appearance -}}
+{{- $font := "system" -}}{{- with $a.font }}{{ $font = . }}{{ end -}}
+{{- $stacks := dict
+  "system" "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
+  "sans" "Helvetica,Arial,'Helvetica Neue',sans-serif"
+  "serif" "Georgia,'Times New Roman',Times,serif"
+  "mono" "ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"
+  "rounded" "'Avenir Next','Segoe UI',system-ui,sans-serif"
+-}}
+{{- $stack := index $stacks $font -}}
+{{- if not $stack }}{{ $stack = index $stacks "system" }}{{ end -}}
+<style>
+:root{
+  --accent: {{ $a.accentcolor | default "#111111" }};
+  --bg: {{ $a.bgcolor | default "#ffffff" }};
+  --ink: {{ $a.textcolor | default "#222426" }};
+  --serif: {{ $stack | safeCSS }};
+  --user-font: {{ $stack | safeCSS }};
+}
+body{ font-family: var(--user-font); color: var(--ink); background: var(--bg); }
+a{ color: var(--accent); }
+.site-name, .p-category{ color: var(--accent); }
+</style>

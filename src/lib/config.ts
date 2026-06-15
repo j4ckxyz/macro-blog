@@ -70,6 +70,13 @@ export interface MicroblogConfig {
   ping_url: string;
 }
 
+export interface AppearanceConfig {
+  font: string;             // system | serif | mono | sans | rounded
+  accent_color: string;     // links / buttons
+  background_color: string;
+  text_color: string;
+}
+
 export interface MacroblogConfig {
   site: SiteConfig;
   server: ServerConfig;
@@ -80,6 +87,7 @@ export interface MacroblogConfig {
   feeds: FeedsConfig;
   media: MediaConfig;
   microblog: MicroblogConfig;
+  appearance: AppearanceConfig;
 }
 
 const DEFAULTS: MacroblogConfig = {
@@ -104,6 +112,12 @@ const DEFAULTS: MacroblogConfig = {
   feeds: { posts_per_page: 20, include_reply_type: false },
   media: { max_file_size: 52428800 },
   microblog: { ping_enabled: false, ping_url: "https://micro.blog/ping" },
+  appearance: {
+    font: "system",
+    accent_color: "#111111",
+    background_color: "#ffffff",
+    text_color: "#222426",
+  },
 };
 
 function deepMerge<T>(base: T, override: any): T {

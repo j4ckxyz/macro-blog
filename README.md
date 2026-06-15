@@ -20,6 +20,8 @@ native ActivityPub — Fediverse reach comes entirely from Mastodon cross-postin
 - **Following timeline** — your Bluesky + Mastodon home feeds, merged and cached server-side so they load instantly.
 - **Unified Mentions** — read and reply to Bluesky + Mastodon replies in one place.
 - **Mobile-friendly admin** — responsive composer, browsing, and a native-style bottom tab bar.
+- **Customisable look** — pick a font, set accent/background/text colours, and upload a profile photo from Settings → Appearance (no theme editing).
+- **Custom pages** — create standalone pages (e.g. `/about/`) and toggle them into the site nav, all from the admin.
 - **Theme-compatible** — drop a Micro.blog Hugo theme into `hugo-site/themes/` and it just works.
 - **Web admin** — compose, manage posts/media/mentions, connect accounts, change settings, back up — all from the browser.
 - **Painless backups & updates** — your content/db/uploads/config are never overwritten by an update.
@@ -121,8 +123,11 @@ day-to-day use.
    **Mentions** (webmentions + Bluesky/Mastodon replies you can answer inline),
    **Uploads**, and **Settings**.
    On phones this becomes a bottom tab bar — everything is touch-friendly.
-5. **Settings** is where you connect Bluesky/Mastodon, choose a theme, change
-   your password, toggle webmentions/feeds, **download a backup**, and rebuild.
+5. **Pages** lets you create standalone pages (e.g. an About page) in Markdown
+   and toggle "Show in nav" to add them to your site header.
+6. **Settings** is where you set **Appearance** (profile photo, font, colours),
+   connect Bluesky/Mastodon, choose a theme, change your password, toggle
+   webmentions/feeds, **download a backup**, and rebuild.
 
 > First-run checklist: set `site.url` to your real domain, set a password,
 > connect any cross-posting accounts, then **Settings → Rebuild site**.

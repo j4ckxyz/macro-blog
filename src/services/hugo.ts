@@ -92,6 +92,12 @@ async function doFullBuild(): Promise<void> {
           HUGO_PARAMS_AUTHOR_NAME: cfg.site.author,
           HUGO_PARAMS_AUTHOR_USERNAME: cfg.site.username,
           HUGO_PARAMS_INCLUDE_REPLY_TYPE: String(cfg.feeds.include_reply_type),
+          // NB: Hugo treats "_" as a nesting delimiter in env vars, so these
+          // param keys are intentionally underscore-free.
+          HUGO_PARAMS_APPEARANCE_FONT: cfg.appearance.font,
+          HUGO_PARAMS_APPEARANCE_ACCENTCOLOR: cfg.appearance.accent_color,
+          HUGO_PARAMS_APPEARANCE_BGCOLOR: cfg.appearance.background_color,
+          HUGO_PARAMS_APPEARANCE_TEXTCOLOR: cfg.appearance.text_color,
         },
         stdout: "pipe",
         stderr: "pipe",

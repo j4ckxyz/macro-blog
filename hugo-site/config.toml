@@ -14,6 +14,11 @@ summaryLength = 30
   [params.author]
     name = "Author"
     username = "author"
+  [params.appearance]
+    font = "system"
+    accentcolor = "#111111"
+    bgcolor = "#ffffff"
+    textcolor = "#222426"
 
 [taxonomies]
   category = "categories"
