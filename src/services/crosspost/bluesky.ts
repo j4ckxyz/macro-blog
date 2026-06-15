@@ -69,7 +69,10 @@ async function xrpc(
   }
   if (!res.ok) {
     const body = await res.text();
-    if (res.status === 401 || /invalid_token|expired/i.test(body)) {
+    // 401/expired → token dead. A 403 ScopeMissingError means the stored token
+    // was granted fewer scopes than we now request (e.g. older grants without
+    // the read scopes) — the user must reconnect to pick up the new scopes.
+    if (res.status === 401 || /invalid_token|expired/i.test(body) || /ScopeMissing/i.test(body)) {
       setReauth("bluesky", true);
     }
     throw new Error(`xrpc ${nsid} failed: ${res.status} ${body}`);

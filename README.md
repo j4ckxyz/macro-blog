@@ -192,12 +192,18 @@ Macroblog speaks **ATProto OAuth 2.0** with DPoP, PKCE and PAR. Crucially it ask
 for the **minimum permissions** it needs rather than full account access:
 
 ```
-atproto                         # authenticate (required)
-repo:app.bsky.feed.post         # create posts AND replies
-blob:image/*                    # upload media for photo posts
-rpc:app.bsky.feed.getTimeline   # read your following feed (Timeline tab)
-rpc:app.bsky.feed.getPostThread # read replies so you can answer them (Mentions)
+atproto                                                      # authenticate (required)
+repo:app.bsky.feed.post                                      # create posts AND replies
+blob:image/*                                                 # upload media for photo posts
+rpc:app.bsky.feed.getTimeline?aud=did:web:api.bsky.app#bsky_appview    # read your following feed (Timeline tab)
+rpc:app.bsky.feed.getPostThread?aud=did:web:api.bsky.app#bsky_appview  # read replies so you can answer them (Mentions)
 ```
+
+The two `rpc:` scopes name the Bluesky **AppView** audience (`?aud=…`). ATProto
+requires `rpc:` scopes to declare which service the call is proxied to; without
+it the authorization server silently drops the scope and reads come back `403
+ScopeMissingError`. If you previously connected before this was set, **reconnect**
+Bluesky once so the new read scopes are granted.
 
 It never requests the deprecated broad `transition` generic scope, so Macroblog
 **cannot** touch your follows, likes, DMs, profile, or account settings.

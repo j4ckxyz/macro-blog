@@ -1,5 +1,5 @@
 import { getConfig } from "../../lib/config.ts";
-import { getToken, setReauth } from "../../lib/tokens.ts";
+import { getToken, getTokenExtra, setReauth } from "../../lib/tokens.ts";
 import type { CrosspostPayload, CrosspostResult } from "./types.ts";
 import type { NormalizedTimelineItem } from "../timeline.ts";
 
@@ -15,8 +15,10 @@ function checkAuth(status: number): void {
  */
 
 function instanceUrl(): string {
-  const cfg = getConfig();
-  const url = cfg.crossposting.mastodon.instance_url;
+  // Prefer the instance we actually hold a token for, so we always talk to the
+  // currently-connected account — never a stale config value left over from a
+  // previously authenticated account.
+  const url = getTokenExtra("mastodon").instance || getConfig().crossposting.mastodon.instance_url;
   if (!url) throw new Error("mastodon instance_url not configured");
   return url.replace(/\/+$/, "");
 }
