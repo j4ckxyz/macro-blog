@@ -485,7 +485,8 @@ export async function fetchBlueskyTimeline(limit = 50): Promise<NormalizedTimeli
     if (!p) continue;
     const handle = p.author?.handle;
     const rkey = (p.uri as string).split("/").pop();
-    const media = (p.embed?.images ?? p.embed?.media?.images ?? []).map((im: any) => ({
+    const rawImages = p.embed?.images ?? p.embed?.media?.images ?? p.embed?.items ?? p.embed?.media?.items ?? [];
+    const media = rawImages.map((im: any) => ({
       url: im.fullsize || im.thumb || "",
       alt: im.alt || "",
     }));
@@ -519,7 +520,8 @@ export async function fetchBlueskyTimeline(limit = 50): Promise<NormalizedTimeli
         if (recordView && recordView.$type === "app.bsky.embed.record#viewRecord") {
           const recHandle = recordView.author?.handle;
           const recRkey = (recordView.uri as string).split("/").pop();
-          const recMedia = (recordView.embeds?.[0]?.images || recordView.embeds?.[0]?.media?.images || []).map((im: any) => ({
+          const recRawImages = recordView.embeds?.[0]?.images || recordView.embeds?.[0]?.media?.images || recordView.embeds?.[0]?.items || recordView.embeds?.[0]?.media?.items || [];
+          const recMedia = recRawImages.map((im: any) => ({
             url: im.fullsize || im.thumb || "",
             alt: im.alt || "",
           }));
