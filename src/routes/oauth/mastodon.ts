@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { getConfig } from "../../lib/config.ts";
 import { getDb } from "../../db/index.ts";
-import { saveToken } from "../../lib/tokens.ts";
+import { saveToken, deleteToken } from "../../lib/tokens.ts";
 import { randomToken } from "../../lib/indieauth.ts";
 import type { MastodonAppRow } from "../../db/schema.ts";
 
@@ -102,6 +102,10 @@ mastodon.get("/callback", async (c) => {
   if (!res.ok) return c.json({ error: "token exchange failed", detail: await res.text() }, 502);
   const tok = (await res.json()) as { access_token: string; scope?: string; token_type?: string };
 
+  // Only ONE Mastodon account may be connected at a time. Drop any previously
+  // authenticated account's token so cross-posting can never target a stale
+  // instance/account that was formerly connected.
+  deleteToken("mastodon");
   saveToken("mastodon", {
     access_token: tok.access_token,
     token_type: tok.token_type ?? "Bearer",

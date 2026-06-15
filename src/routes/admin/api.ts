@@ -318,7 +318,12 @@ adminApi.get("/oauth/mastodon", (c) => {
 adminApi.post("/oauth/:platform/disconnect", (c) => {
   const platform = c.req.param("platform");
   if (!["bluesky", "mastodon"].includes(platform)) return c.json({ error: "unknown platform" }, 400);
+  const db = getDb();
   deleteToken(platform);
+  // Drop any content cached from the now-disconnected account so a former
+  // account's timeline/replies don't stick around in the admin.
+  db.query("DELETE FROM timeline WHERE platform = ?").run(platform);
+  db.query("DELETE FROM social_replies WHERE platform = ?").run(platform);
   return c.json({ ok: true });
 });
 

@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { getConfig } from "../../lib/config.ts";
 import { randomToken, base64url, s256Challenge } from "../../lib/indieauth.ts";
 import { generateDpopKeypair, dpopFetch, type DpopKeypair } from "../../lib/dpop.ts";
-import { saveToken, getToken, getTokenExtra } from "../../lib/tokens.ts";
+import { saveToken, getToken, getTokenExtra, deleteToken } from "../../lib/tokens.ts";
 
 /**
  * ATProto (Bluesky) OAuth 2.0 with DPoP + PAR + PKCE.
@@ -18,12 +18,25 @@ import { saveToken, getToken, getTokenExtra } from "../../lib/tokens.ts";
 export const bluesky = new Hono();
 
 /**
+ * The Bluesky AppView DID. `rpc:` permission scopes MUST name the audience
+ * (the service the XRPC call is proxied to); without `?aud=…` the atproto
+ * authorization server treats the scope as invalid and silently drops it,
+ * which is why `getTimeline`/`getPostThread` previously came back 403
+ * `ScopeMissingError` even though we asked for them. Reads of the `app.bsky.*`
+ * lexicons are served by the AppView, identified by this DID.
+ */
+export const BSKY_APPVIEW_AUD = "did:web:api.bsky.app#bsky_appview";
+
+/**
  * Minimal granular permission scopes Macroblog actually needs — and ONLY these:
  *  - `atproto`                          authenticate (required)
  *  - `repo:app.bsky.feed.post`          create posts AND replies
  *  - `blob:image/*`                     upload media for photo posts
  *  - `rpc:app.bsky.feed.getTimeline`    read your following feed (Timeline tab)
  *  - `rpc:app.bsky.feed.getPostThread`  read replies (Mentions tab)
+ *
+ * The two `rpc:` scopes are scoped to the Bluesky AppView audience (see
+ * BSKY_APPVIEW_AUD) so the authorization server actually grants them.
  *
  * This intentionally does NOT grant access to follows, likes, DMs, profile
  * edits, account settings, or arbitrary record types. Override via
@@ -33,8 +46,8 @@ export const BLUESKY_SCOPES = [
   "atproto",
   "repo:app.bsky.feed.post",
   "blob:image/*",
-  "rpc:app.bsky.feed.getTimeline",
-  "rpc:app.bsky.feed.getPostThread",
+  `rpc:app.bsky.feed.getTimeline?aud=${BSKY_APPVIEW_AUD}`,
+  `rpc:app.bsky.feed.getPostThread?aud=${BSKY_APPVIEW_AUD}`,
 ].join(" ");
 
 export function blueskyScope(): string {
@@ -213,6 +226,10 @@ bluesky.get("/callback", async (c) => {
     ? new Date(Date.now() + tok.expires_in * 1000).toISOString()
     : null;
 
+  // Only ONE Bluesky account may be connected at a time. Wipe any previously
+  // authenticated account's token (DPoP keys, refresh token, DID/handle) so a
+  // former account can never linger and get cross-posted to.
+  deleteToken("bluesky");
   saveToken("bluesky", {
     access_token: tok.access_token,
     refresh_token: tok.refresh_token,
