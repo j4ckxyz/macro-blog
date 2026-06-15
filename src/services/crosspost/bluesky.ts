@@ -152,7 +152,8 @@ export async function buildPostRecord(
     return record;
   }
 
-  if (payload.photos.length) {
+  const hasVideo = payload.photos.some(p => p.url.match(/\.(mp4|webm|ogg|mov)$/i));
+  if (payload.photos.length && !hasVideo) {
     const images = [];
     for (const photo of payload.photos.slice(0, 4)) {
       const blob = await uploadBlob(session, photo.url);
@@ -187,6 +188,38 @@ export async function buildPostRecord(
     record.text = text;
     record.facets = facets;
     record.embed = { $type: "app.bsky.embed.images", images };
+    return record;
+  }
+
+  if (hasVideo) {
+    let text = payload.text;
+    let facets = [];
+    if (linkBack) {
+      text = truncateGraphemes(text, MAX_GRAPHEMES - 3);
+      const encoder = new TextEncoder();
+      const byteStart = encoder.encode(text + " ").length;
+      const byteEnd = byteStart + encoder.encode("🔗").length;
+      text += " 🔗";
+      facets = buildFacets(text);
+      facets.push({
+        index: { byteStart, byteEnd },
+        features: [{ $type: "app.bsky.richtext.facet#link", uri: payload.url }],
+      });
+    } else {
+      text = truncateGraphemes(text, MAX_GRAPHEMES);
+      facets = buildFacets(text);
+    }
+
+    record.text = text;
+    record.facets = facets;
+    record.embed = {
+      $type: "app.bsky.embed.external",
+      external: {
+        uri: payload.url,
+        title: payload.title || "Video Post",
+        description: truncateGraphemes(payload.text || "Watch the video on my blog", 300),
+      },
+    };
     return record;
   }
 

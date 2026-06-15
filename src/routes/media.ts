@@ -17,6 +17,9 @@ const ALLOWED: Record<string, string> = {
   "audio/mp4": ".m4a",
   "audio/x-m4a": ".m4a",
   "video/mp4": ".mp4",
+  "video/webm": ".webm",
+  "video/ogg": ".ogv",
+  "video/quicktime": ".mov",
 };
 
 export interface StoredMedia {

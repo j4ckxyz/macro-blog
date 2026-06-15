@@ -75,6 +75,21 @@ describe("Bluesky record building", () => {
     expect(record.embed.images[0].image.ref.$link).toBe("bafy");
   });
 
+  test("video post → external embed link card (no upload, fallback)", async () => {
+    const sess = await session();
+    const payload: CrosspostPayload = {
+      text: "watch my video",
+      url: "http://127.0.0.1:3000/vid/",
+      type: "photo",
+      photos: [{ url: `http://127.0.0.1:3000/media/clip.mp4`, alt: "funny video" }],
+    };
+    const record = await buildPostRecord(payload, sess);
+    expect(record.embed.$type).toBe("app.bsky.embed.external");
+    expect(record.embed.external.uri).toBe("http://127.0.0.1:3000/vid/");
+    expect(record.embed.external.title).toBe("Video Post");
+    expect(record.embed.external.description).toBe("watch my video");
+  });
+
   test("buildFacets produces byte-indexed link facets", () => {
     const text = "see https://example.com now";
     const facets = buildFacets(text);

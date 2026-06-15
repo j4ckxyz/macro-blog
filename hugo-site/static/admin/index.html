@@ -168,7 +168,11 @@
     .preview img{max-width:100%;border-radius:8px;margin:8px 0}
     .preview .hashtag{color:var(--blue);font-weight:600}
     .photo-edit{display:flex;gap:10px;align-items:center;margin-top:8px}
-    .photo-edit img{width:64px;height:64px;object-fit:cover;border-radius:8px;flex:0 0 64px}
+    .photo-edit img,.photo-edit video{width:64px;height:64px;object-fit:cover;border-radius:8px;flex:0 0 64px}
+    .composer-options{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-top:12px;padding:2px 4px}
+    .composer-checkboxes{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+    .tags-input{border:1.5px solid var(--field);border-radius:10px;padding:6px 12px;font-size:14px;outline:none;width:180px;background:var(--card);color:var(--text);transition:border-color 0.2s, width 0.2s}
+    .tags-input:focus{border-color:#7aa7ee;width:240px}
     .photo-edit input{flex:1;border:1px solid var(--input-border);border-radius:8px;padding:8px 10px;font-size:14px}
 
     /* timeline */
@@ -446,7 +450,7 @@
     const count=h("span",{class:"count"},"0/300");
     const toast=h("div",{class:"toast"});
     const previewPanel=h("div",{class:"preview",style:"display:none"});
-    const tags=h("input",{type:"text",placeholder:"tags, comma separated"});
+    const tags=h("input",{type:"text",placeholder:"Add tags…",class:"tags-input"});
     const sched=h("input",{type:"datetime-local"});
     const photoList=h("div",{class:"photolist"});
     let bookmarkUrl="";
@@ -457,33 +461,102 @@
 
     const wrap=(d)=>{const s=editor.selectionStart,e=editor.selectionEnd,v=editor.value;editor.value=v.slice(0,s)+d+v.slice(s,e)+d+v.slice(e);editor.focus();editor.dispatchEvent(new Event("input"));};
     const tb=(icon,fn)=>h("button",{class:"tbtn",html:icon,onclick:fn});
-    const fileInput=h("input",{type:"file",accept:"image/*",multiple:"true",style:"display:none",onchange:e=>upload(e.target.files)});
+    const fileInput=h("input",{type:"file",accept:"image/*,video/*",multiple:"true",style:"display:none",onchange:e=>upload(e.target.files)});
     async function upload(files){
+      // Categorize current
+      let imgCount = 0;
+      let vidCount = 0;
+      for (const p of photos) {
+        if (p.url.match(/\.(mp4)/i)) vidCount++;
+        else imgCount++;
+      }
+      
+      // Categorize new files
+      let newImgs = 0;
+      let newVids = 0;
+      for (const f of files) {
+        if (f.type.startsWith("video/")) newVids++;
+        else if (f.type.startsWith("image/")) newImgs++;
+        else {
+          toast.textContent = "Unsupported file type: " + f.type;
+          toast.style.color = "#d33";
+          return;
+        }
+      }
+
+      if (newImgs === 0 && newVids === 0) return;
+
+      if (vidCount + newVids > 1) {
+        toast.textContent = "Error: You can only upload up to 1 video.";
+        toast.style.color = "#d33";
+        return;
+      }
+      if ((vidCount + newVids) > 0 && (imgCount + newImgs) > 0) {
+        toast.textContent = "Error: Cannot combine images and video.";
+        toast.style.color = "#d33";
+        return;
+      }
+      if (imgCount + newImgs > 4) {
+        toast.textContent = "Error: You can only upload up to 4 images.";
+        toast.style.color = "#d33";
+        return;
+      }
+
+      toast.textContent = "";
+      toast.style.color = "";
+
       for(const f of files){
         const fd=new FormData();fd.set("file",f);
-        const d=await (await api("/api/media",{method:"POST",body:fd})).json();
-        if(!d.url) continue;
-        const photo={url:d.url,alt:""};
-        if (f.type.startsWith("image/")) {
-          const imgObj = new Image();
-          imgObj.onload = () => {
-            photo.width = imgObj.naturalWidth;
-            photo.height = imgObj.naturalHeight;
-            URL.revokeObjectURL(imgObj.src);
-          };
-          imgObj.src = URL.createObjectURL(f);
+        try {
+          const res = await api("/api/media",{method:"POST",body:fd});
+          if (!res.ok) {
+            toast.textContent = "Upload failed: " + (await res.text());
+            toast.style.color = "#d33";
+            continue;
+          }
+          const d = await res.json();
+          if(!d.url) continue;
+          
+          const isVideo = f.type.startsWith("video/");
+          const photo={url:d.url,alt:""};
+          if (!isVideo && f.type.startsWith("image/")) {
+            const imgObj = new Image();
+            imgObj.onload = () => {
+              photo.width = imgObj.naturalWidth;
+              photo.height = imgObj.naturalHeight;
+              URL.revokeObjectURL(imgObj.src);
+            };
+            imgObj.src = URL.createObjectURL(f);
+          }
+          photos.push(photo);
+          
+          const altInput=h("input",{type:"text",placeholder: isVideo ? "Describe this video (alt text)…" : "Describe this image (alt text)…",oninput:e=>{photo.alt=e.target.value;}});
+          const remove=h("button",{class:"btn secondary",style:"padding:6px 10px;color:#d33",onclick:()=>{const i=photos.indexOf(photo);if(i>=0)photos.splice(i,1);row.remove();}},"✕");
+          
+          let previewEl;
+          if (isVideo) {
+            previewEl = h("video",{src:d.url,style:"width:64px;height:64px;object-fit:cover;border-radius:8px;flex:0 0 64px"});
+          } else {
+            previewEl = h("img",{src:d.url,alt:""});
+          }
+          const row=h("div",{class:"photo-edit"},previewEl,altInput,remove);
+          photoList.append(row);
+        } catch (err) {
+          toast.textContent = "Error uploading: " + err.message;
+          toast.style.color = "#d33";
         }
-        photos.push(photo);
-        const altInput=h("input",{type:"text",placeholder:"Describe this image (alt text)…",oninput:e=>{photo.alt=e.target.value;}});
-        const remove=h("button",{class:"btn secondary",style:"padding:6px 10px;color:#d33",onclick:()=>{const i=photos.indexOf(photo);if(i>=0)photos.splice(i,1);row.remove();}},"✕");
-        const row=h("div",{class:"photo-edit"},h("img",{src:d.url,alt:""}),altInput,remove);
-        photoList.append(row);
       }
     }
     // drag-and-drop straight onto the editor
     ["dragover","dragenter"].forEach(ev=>editor.addEventListener(ev,e=>{e.preventDefault();editor.style.borderColor="#7aa7ee";}));
     ["dragleave","drop"].forEach(ev=>editor.addEventListener(ev,e=>{e.preventDefault();editor.style.borderColor="";}));
     editor.addEventListener("drop",e=>{if(e.dataTransfer.files.length)upload(e.dataTransfer.files);});
+    editor.addEventListener("paste", e => {
+      if (e.clipboardData && e.clipboardData.files && e.clipboardData.files.length) {
+        e.preventDefault();
+        upload(e.clipboardData.files);
+      }
+    });
 
     const syndicate=new Set();
     if (!editingPostSlug) {
@@ -500,7 +573,7 @@
       return h("label",{class:"ck"},cb,label);
     };
 
-    // The "⋯" options menu (post type, cross-posting, schedule, drafts) — mirrors Micro.blog.
+    // The "⋯" options menu (post type, schedule, bookmarks)
     const types=h("div",{class:"types"},
       ...[["post","Note"],["article","Article"],["photo","Photo"],["bookmark","Bookmark"]].map(([t,l])=>
         h("button",{class:"chip"+(t===type?" on":""),onclick:()=>{type=t;[...types.children].forEach((c,i)=>c.classList.toggle("on",["post","article","photo","bookmark"][i]===t));title.style.display=t==="article"?"block":"none";bookmarkRow.style.display=t==="bookmark"?"block":"none";}},l)));
@@ -508,12 +581,12 @@
     const bookmarkUrlInput=h("input",{class:"titlefield",placeholder:"Bookmark URL",oninput:e=>bookmarkUrl=e.target.value});
     const bookmarkRow=h("div",{style:"display:none;margin-top:8px"},bookmarkUrlInput);
     
-    const xp=h("div",{style:"margin-top:10px"});
-    const notConnected=(name)=>h("div",{class:"hint"},"⚠ "+name+" is enabled but not connected. Open Settings → Cross-posting and click Connect.");
+    const xp=h("div",{class:"composer-checkboxes"});
+    const notConnected=(name)=>h("div",{class:"hint"},"⚠ "+name+" not connected. Reconnect in Settings.");
     
     api("/api/oauth/bluesky").then(r=>r.json()).then(d=>{
       const isDefault = cfg.crossposting && cfg.crossposting.bluesky && cfg.crossposting.bluesky.enabled;
-      if(d.connected) xp.append(mkToggle("bluesky", d.needs_reauth?"🦋 Bluesky — reconnect needed":"🦋 Cross-post to Bluesky", syndicate.has("bluesky")));
+      if(d.connected) xp.append(mkToggle("bluesky", d.needs_reauth?"🦋 Bluesky (reconnect needed)":"🦋 Bluesky", syndicate.has("bluesky")));
       else {
         syndicate.delete("bluesky");
         if(isDefault) xp.append(notConnected("Bluesky"));
@@ -521,7 +594,7 @@
     });
     api("/api/oauth/mastodon").then(r=>r.json()).then(d=>{
       const isDefault = cfg.crossposting && cfg.crossposting.mastodon && cfg.crossposting.mastodon.enabled;
-      if(d.connected) xp.append(mkToggle("mastodon", d.needs_reauth?"🐘 Mastodon — reconnect needed":"🐘 Cross-post to Mastodon", syndicate.has("mastodon")));
+      if(d.connected) xp.append(mkToggle("mastodon", d.needs_reauth?"🐘 Mastodon (reconnect needed)":"🐘 Mastodon", syndicate.has("mastodon")));
       else {
         syndicate.delete("mastodon");
         if(isDefault) xp.append(notConnected("Mastodon"));
@@ -529,7 +602,7 @@
     });
 
     const lbCb = h("input",{type:"checkbox",checked:linkBack,onchange:e=>linkBack=e.target.checked});
-    const lbToggle = h("label",{class:"ck"},lbCb,"🔗 Link back to blog post");
+    const lbToggle = h("label",{class:"ck"},lbCb,"🔗 Link back");
     xp.append(lbToggle);
 
     const bookmarkFolderSelect = h("select",{style:"border:1px solid var(--input-border);border-radius:8px;padding:8px 10px;font-size:14px;width:100%;margin-top:4px;"});
@@ -549,14 +622,14 @@
       h("div",{class:"menu-label"},"Post type"), types,
       bookmarkRow,
       h("div",{class:"menu-label", style: "margin-top:8px"},"Bookmark Folder"), bookmarkFolderSelect,
-      h("div",{class:"menu-label", style: "margin-top:8px"},"Tags"), tags,
-      h("div",{class:"menu-label"},"Schedule"), sched,
-      xp,
-      h("div",{style:"margin-top:12px;display:flex;gap:8px"},
-        h("button",{class:"btn secondary",style:"padding:8px 14px",onclick:submit(true)},"Save as draft")),
-      photoList);
+      h("div",{class:"menu-label"},"Schedule"), sched);
 
     const dots=h("button",{class:"dots",title:"Options",html:"⋯",onclick:()=>{menu.style.display=menu.style.display==="none"?"block":"none";}});
+
+    const optionsRow = h("div", {class: "composer-options"},
+      xp,
+      h("div", {class: "composer-tags-wrapper"}, h("span", {style:"font-size:14px;color:var(--muted);margin-right:4px"},"#"), tags)
+    );
 
     // Populate when editing
     if (editingPostSlug) {
@@ -594,9 +667,17 @@
         if (data.front_matter.photos) {
           for (const photo of data.front_matter.photos) {
             photos.push(photo);
-            const altInput=h("input",{type:"text",placeholder:"Describe this image (alt text)…",value:photo.alt || "",oninput:e=>{photo.alt=e.target.value;}});
+            const isVideo = photo.url.match(/\.(mp4|webm|ogg|mov)$/i);
+            const altInput=h("input",{type:"text",placeholder: isVideo ? "Describe this video (alt text)…" : "Describe this image (alt text)…",value:photo.alt || "",oninput:e=>{photo.alt=e.target.value;}});
             const remove=h("button",{class:"btn secondary",style:"padding:6px 10px;color:#d33",onclick:()=>{const i=photos.indexOf(photo);if(i>=0)photos.splice(i,1);row.remove();}},"✕");
-            const row=h("div",{class:"photo-edit"},h("img",{src:photo.url,alt:""}),altInput,remove);
+            
+            let previewEl;
+            if (isVideo) {
+              previewEl = h("video",{src:photo.url,style:"width:64px;height:64px;object-fit:cover;border-radius:8px;flex:0 0 64px"});
+            } else {
+              previewEl = h("img",{src:photo.url,alt:""});
+            }
+            const row=h("div",{class:"photo-edit"},previewEl,altInput,remove);
             photoList.append(row);
           }
         }
@@ -641,12 +722,15 @@
       h("div",{class:"post-head"},editingPostSlug ? "Edit post: " : "Post to your blog: ",h("b",{},host()), dots),
       h("div",{class:"composer"},
         menu, title, editor,
+        photoList,
+        optionsRow,
         h("div",{class:"toolbar"},
           tb(ICON.image,()=>fileInput.click()), tb(ICON.speaker,()=>wrap("")),
           tb(ICON.bold,()=>wrap("**")), tb(ICON.italic,()=>wrap("_")),
           tb(ICON.link,()=>{const u=prompt("Link URL");if(u){const s=editor.selectionStart,e=editor.selectionEnd,v=editor.value,txt=v.slice(s,e)||"link";editor.value=v.slice(0,s)+"["+txt+"]("+u+")"+v.slice(e);editor.dispatchEvent(new Event("input"));}}),
           count, h("div",{class:"spacer"}),
           h("button",{class:"btn secondary",onclick:togglePreview},"Preview"),
+          h("button",{class:"btn secondary",onclick:submit(true)},"Save Draft"),
           h("button",{class:"btn primary",onclick:submit(false)},editingPostSlug ? "Update" : "Post")),
         previewPanel, fileInput, toast));
 

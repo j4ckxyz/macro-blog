@@ -16,7 +16,11 @@
     {{ with .Params.photos }}
     <div class="photos">
       {{ range . }}
-      <img class="u-photo" src="{{ .url }}" alt="{{ .alt }}" loading="lazy" />
+        {{ if or (strings.HasSuffix (lower .url) ".mp4") (strings.HasSuffix (lower .url) ".webm") (strings.HasSuffix (lower .url) ".ogg") (strings.HasSuffix (lower .url) ".mov") }}
+          <video class="u-video" src="{{ .url }}" controls style="max-width: 100%; max-height: 500px; border-radius: 8px; border: 1px solid var(--border);"></video>
+        {{ else }}
+          <img class="u-photo" src="{{ .url }}" alt="{{ .alt }}" loading="lazy" />
+        {{ end }}
       {{ end }}
     </div>
     {{ end }}

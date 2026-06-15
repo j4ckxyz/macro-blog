@@ -3,7 +3,15 @@
   {{ if .Title }}<h2 class="p-name"><a class="u-url" href="{{ .Permalink }}">{{ .Title }}</a></h2>{{ end }}
   <div class="e-content">
     {{ with .Params.photos }}
-    <div class="photos">{{ range . }}<img class="u-photo" src="{{ .url }}" alt="{{ .alt }}" loading="lazy" />{{ end }}</div>
+    <div class="photos">
+      {{ range . }}
+        {{ if or (strings.HasSuffix (lower .url) ".mp4") (strings.HasSuffix (lower .url) ".webm") (strings.HasSuffix (lower .url) ".ogg") (strings.HasSuffix (lower .url) ".mov") }}
+          <video class="u-video" src="{{ .url }}" controls style="max-width: 100%; max-height: 400px; border-radius: 8px; border: 1px solid var(--border);"></video>
+        {{ else }}
+          <img class="u-photo" src="{{ .url }}" alt="{{ .alt }}" loading="lazy" />
+        {{ end }}
+      {{ end }}
+    </div>
     {{ end }}
     {{ .Content }}
   </div>

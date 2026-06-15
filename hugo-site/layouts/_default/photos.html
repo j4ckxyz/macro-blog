@@ -5,7 +5,11 @@
   {{ range $photos }}
     {{ range .Params.photos }}
     <a class="photo-cell" href="{{ $.Permalink }}">
-      <img src="{{ .url }}" alt="{{ .alt }}" loading="lazy" />
+      {{ if or (strings.HasSuffix (lower .url) ".mp4") (strings.HasSuffix (lower .url) ".webm") (strings.HasSuffix (lower .url) ".ogg") (strings.HasSuffix (lower .url) ".mov") }}
+        <video src="{{ .url }}" muted style="width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 10px; border: 1px solid var(--border);"></video>
+      {{ else }}
+        <img src="{{ .url }}" alt="{{ .alt }}" loading="lazy" />
+      {{ end }}
     </a>
     {{ end }}
   {{ end }}
