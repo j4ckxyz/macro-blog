@@ -20,6 +20,15 @@ import {
 import { triggerBuild, fullBuild, getBuildStatus } from "../../services/hugo.ts";
 import { isConnected, getTokenExtra, deleteToken, needsReauth } from "../../lib/tokens.ts";
 import { getTimeline, refreshTimeline } from "../../services/timeline.ts";
+import {
+  createPage,
+  listPages,
+  getPageRow,
+  readPage,
+  updatePage,
+  deletePage,
+  pagePermalink,
+} from "../../services/pages.ts";
 import { hashPassword } from "../../lib/indieauth.ts";
 import { pollReplies } from "../../services/reply-poller.ts";
 import { replyMastodon } from "../../services/crosspost/mastodon.ts";
@@ -111,6 +120,61 @@ adminApi.delete("/posts/:slug", async (c) => {
   const post = getPostBySlug(c.req.param("slug"));
   if (!post) return c.json({ error: "not_found" }, 404);
   await deletePost(post);
+  triggerBuild();
+  return c.json({ ok: true });
+});
+
+// --- Pages (custom standalone pages, e.g. /about/) ---
+adminApi.get("/pages", async (c) => {
+  const rows = listPages();
+  const pages = [];
+  for (const r of rows) {
+    const p = await readPage(r);
+    pages.push({ slug: r.slug, title: p.title, status: p.status, show_in_nav: p.showInNav, weight: p.weight, url: pagePermalink(r.slug) });
+  }
+  return c.json({ pages });
+});
+
+adminApi.post("/pages", async (c) => {
+  const b = await c.req.json();
+  if (!b.title || !String(b.title).trim()) return c.json({ error: "title required" }, 400);
+  const row = await createPage({
+    title: b.title,
+    content: b.content ?? "",
+    showInNav: b.show_in_nav ?? false,
+    weight: Number(b.weight) || 0,
+    status: b.status === "draft" ? "draft" : "published",
+  });
+  triggerBuild();
+  return c.json({ slug: row.slug, url: pagePermalink(row.slug) }, 201);
+});
+
+adminApi.get("/pages/:slug", async (c) => {
+  const row = getPageRow(c.req.param("slug"));
+  if (!row) return c.json({ error: "not_found" }, 404);
+  const p = await readPage(row);
+  return c.json({ slug: row.slug, ...p, url: pagePermalink(row.slug) });
+});
+
+adminApi.put("/pages/:slug", async (c) => {
+  const row = getPageRow(c.req.param("slug"));
+  if (!row) return c.json({ error: "not_found" }, 404);
+  const b = await c.req.json();
+  await updatePage(row, {
+    title: b.title ?? row.title ?? "",
+    content: b.content ?? "",
+    showInNav: b.show_in_nav ?? false,
+    weight: Number(b.weight) || 0,
+    status: b.status === "draft" ? "draft" : "published",
+  });
+  triggerBuild();
+  return c.json({ ok: true });
+});
+
+adminApi.delete("/pages/:slug", async (c) => {
+  const row = getPageRow(c.req.param("slug"));
+  if (!row) return c.json({ error: "not_found" }, 404);
+  await deletePage(row);
   triggerBuild();
   return c.json({ ok: true });
 });
@@ -265,6 +329,7 @@ function safeConfig() {
     feeds: cfg.feeds,
     media: cfg.media,
     microblog: cfg.microblog,
+    appearance: cfg.appearance,
   };
 }
 

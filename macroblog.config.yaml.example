@@ -50,3 +50,10 @@ microblog:
   # Optional: ping Micro.blog when you publish (for feed-based syndication)
   ping_enabled: false
   ping_url: "https://micro.blog/ping"
+
+appearance:
+  # All editable from the admin (Settings → Appearance).
+  font: "system"                       # system | sans | serif | mono | rounded
+  accent_color: "#111111"
+  background_color: "#ffffff"
+  text_color: "#222426"

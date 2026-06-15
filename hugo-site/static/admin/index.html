@@ -201,6 +201,7 @@
     link: svg('<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>'),
     chev: svg('<path d="m6 9 6 6 6-6"/>'),
     home: svg('<path d="M3 9.5 12 3l9 6.5"/><path d="M5 10v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V10"/><path d="M9 21v-6h6v6"/>'),
+    file: svg('<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/><path d="M8 13h8"/><path d="M8 17h8"/>'),
   };
 
   async function api(path, opts={}){
@@ -242,6 +243,7 @@
     ["composer", "pencil", "New Post"],
     ["timeline", "home", "Timeline"],
     ["posts", "posts", "Posts"],
+    ["pages", "file", "Pages"],
     ["mentions", "at", "Mentions"],
     ["media", "image", "Uploads"],
     ["settings", "gear", "Settings"],
@@ -264,6 +266,7 @@
       h("nav",{class:"nav"},
         navItem("timeline",ICON.home,"Timeline"),
         navItem("posts",ICON.posts,"Posts"),
+        navItem("pages",ICON.file,"Pages"),
         navItem("mentions",ICON.at,"Mentions"),
         navItem("media",ICON.image,"Uploads"),
         h("div",{class:"sep"}),
@@ -274,12 +277,12 @@
     const topbar = h("div",{class:"topbar"},
       h("div",{class:"brand"}, h("div",{class:"mark",html:starSvg()}), h("div",{class:"name"},"Macroblog")),
       h("button",{class:"topnew",onclick:()=>go("composer"),html:ICON.pencil,title:"New Post"}));
-    const tabIds=["timeline","composer","posts","mentions","settings"];
+    const tabIds=["timeline","composer","posts","pages","mentions","settings"];
     const bottomnav = h("div",{class:"bottomnav"},
       ...tabIds.map(id=>{const [,,label]=NAV.find(n=>n[0]===id);return h("a",{class:"tab"+(active===id?" active":""),href:"#",onclick:e=>{e.preventDefault();go(id);},html:ICON[NAV.find(n=>n[0]===id)[1]]+`<span>${label}</span>`});}));
 
     root.append(h("div",{class:"shell"}, sidebar, topbar, main, bottomnav));
-    ({composer,timeline:timelineView,posts:postsView,media:mediaView,mentions:mentionsView,settings:settingsView}[active])(main);
+    ({composer,timeline:timelineView,posts:postsView,pages:pagesView,media:mediaView,mentions:mentionsView,settings:settingsView}[active])(main);
   }
 
   // Banner shown when a platform token has expired and needs reconnecting.
@@ -441,6 +444,51 @@
     }
   }
 
+  /* ---------------- pages ---------------- */
+  async function pagesView(view){
+    const {pages}=await (await api("/api/pages")).json();
+    view.append(h("div",{class:"viewhead"},h("h2",{class:"section"},"Pages"),
+      h("button",{class:"btn primary",style:"padding:8px 16px",onclick:()=>pageEditor(view,null)},"+ New page")));
+    view.append(h("p",{style:"color:#8a9099;font-size:14px;margin:2px 0 12px"},"Standalone pages like /about/. Toggle “Show in nav” to add them to your site’s header."));
+    if(!pages.length){ view.append(h("p",{style:"color:#8a9099"},"No pages yet.")); return; }
+    for(const p of pages){
+      view.append(h("div",{class:"row"},
+        h("div",{},h("span",{},p.title||p.slug),
+          h("div",{class:"meta"},(p.show_in_nav?"in nav · ":"")+p.status+" · ",h("a",{href:p.url,target:"_blank"},p.url))),
+        h("div",{style:"display:flex;gap:8px"},
+          h("button",{class:"btn secondary",style:"padding:6px 12px",onclick:()=>pageEditor(view,p.slug)},"Edit"),
+          h("button",{class:"btn secondary",style:"padding:6px 12px;color:#d33",onclick:async()=>{if(confirm("Delete page “"+(p.title||p.slug)+"”?")){await api("/api/pages/"+p.slug,{method:"DELETE"});view.innerHTML="";pagesView(view);}}},"Delete"))));
+    }
+  }
+  async function pageEditor(view,slug){
+    view.innerHTML="";
+    let existing=null;
+    if(slug){ existing=await (await api("/api/pages/"+slug)).json(); }
+    const title=h("input",{class:"titlefield",placeholder:"Page title",value:existing?existing.title:""});
+    const content=h("textarea",{class:"editor",style:"min-height:300px",placeholder:"Page content (Markdown)…"});
+    if(existing) content.value=existing.content||"";
+    const nav=h("input",{type:"checkbox"}); if(existing&&existing.showInNav) nav.checked=true;
+    const weight=h("input",{type:"text",value:existing?String(existing.weight||0):"0",style:"width:80px;border:1px solid #dfe2e6;border-radius:8px;padding:8px 10px"});
+    const status=h("div",{class:"toast"});
+    const saveBtn=(draft)=>async()=>{
+      const body={title:title.value,content:content.value,show_in_nav:nav.checked,weight:Number(weight.value)||0,status:draft?"draft":"published"};
+      let r;
+      if(slug) r=await api("/api/pages/"+slug,{method:"PUT",json:body});
+      else r=await api("/api/pages",{method:"POST",json:body});
+      if(r.ok){ view.innerHTML=""; pagesView(view); } else { status.textContent="Error: "+(await r.text()); }
+    };
+    view.append(h("div",{class:"viewhead"},h("h2",{class:"section"},slug?"Edit page":"New page"),
+      h("button",{class:"btn secondary",style:"padding:7px 14px",onclick:()=>{view.innerHTML="";pagesView(view);}},"← Back")),
+      title, content,
+      h("div",{class:"extras",style:"margin-top:12px"},
+        h("label",{class:"ck"},nav,"Show in site nav"),
+        h("label",{class:"ck"},"Order ",weight)),
+      h("div",{style:"display:flex;gap:8px;margin-top:12px"},
+        h("button",{class:"btn primary",onclick:saveBtn(false)},"Save & publish"),
+        h("button",{class:"btn secondary",onclick:saveBtn(true)},"Save draft")),
+      status);
+  }
+
   /* ---------------- mentions ---------------- */
   async function mentionsView(view){
     const reload=()=>{view.innerHTML="";mentionsView(view);};
@@ -490,6 +538,20 @@
     const bsEnabled=chk(c.crossposting.bluesky.enabled),bsHandle=inp(c.crossposting.bluesky.handle);
     const mEnabled=chk(c.crossposting.mastodon.enabled),mInst=inp(c.crossposting.mastodon.instance_url);
     const ping=chk(c.microblog.ping_enabled);
+
+    // Appearance: avatar + font + colours
+    const ap=c.appearance||{font:"system",accent_color:"#111111",background_color:"#ffffff",text_color:"#222426"};
+    let avatarUrl=c.site.avatar||"";
+    const avatarImg=h("img",{src:avatarUrl,alt:"",style:"width:64px;height:64px;border-radius:50%;object-fit:cover;background:#eee",onerror:"this.style.visibility='hidden'"});
+    const avatarFile=h("input",{type:"file",accept:"image/*",style:"display:none",onchange:async e=>{
+      const fl=e.target.files[0]; if(!fl) return; const fd=new FormData(); fd.set("file",fl);
+      const d=await (await api("/api/media",{method:"POST",body:fd})).json();
+      if(d.url){ avatarUrl=d.url; avatarImg.src=d.url; avatarImg.style.visibility="visible"; }
+    }});
+    const fontSel=h("select",{},...[["system","System default"],["sans","Sans-serif"],["serif","Serif"],["mono","Monospace"],["rounded","Rounded"]].map(([v,l])=>{const o=h("option",{value:v},l);if(v===ap.font)o.selected=true;return o;}));
+    const colorInput=v=>h("input",{type:"color",value:v||"#000000",style:"width:54px;height:38px;border:1px solid #dfe2e6;border-radius:8px;padding:2px;background:#fff"});
+    const accent=colorInput(ap.accent_color),bg=colorInput(ap.background_color),txt=colorInput(ap.text_color);
+
     const themes=await (await api("/api/themes")).json();
     const themeSel=h("select",{},h("option",{value:""},"(default)"),...themes.themes.map(t=>{const o=h("option",{value:t},t);if(t===themes.active)o.selected=true;return o;}));
     const bs=await (await api("/api/oauth/bluesky")).json();
@@ -497,18 +559,31 @@
 
     const save=async()=>{
       await api("/api/config",{method:"PUT",json:{
-        site:{title:title.value,description:desc.value,author:author.value,username:username.value,url:url.value},
+        site:{title:title.value,description:desc.value,author:author.value,username:username.value,url:url.value,avatar:avatarUrl},
         feeds:{posts_per_page:Number(perPage.value),include_reply_type:inclReply.checked},
         webmentions:{receive:wmRecv.checked,send:wmSend.checked,moderation:wmMod.checked},
         crossposting:{bluesky:{enabled:bsEnabled.checked,handle:bsHandle.value},mastodon:{enabled:mEnabled.checked,instance_url:mInst.value}},
-        microblog:{ping_enabled:ping.checked}, hugo:{theme:themeSel.value}}});
-      toast.textContent="✓ Saved — rebuild to apply.";
+        microblog:{ping_enabled:ping.checked}, hugo:{theme:themeSel.value},
+        appearance:{font:fontSel.value,accent_color:accent.value,background_color:bg.value,text_color:txt.value}}});
+      toast.textContent="✓ Saved. Rebuilding…";
+      const s=await (await api("/api/hugo/build",{method:"POST"})).json();
+      toast.textContent=s.lastSuccess?"✓ Saved & rebuilt — refresh your site to see changes.":"Saved, but rebuild failed (see Backup & build below).";
     };
     const reload=()=>{view.innerHTML="";settingsView(view);};
 
     view.append(h("h2",{class:"section"},"Settings"),
       h("h3",{class:"sub"},"Site"),
       f("Title",title),f("Description",desc),f("Author",author),f("Username",username),f("Public URL",url),
+      h("h3",{class:"sub"},"Appearance"),
+      h("div",{class:"field"},h("label",{},"Profile photo"),
+        h("div",{style:"display:flex;align-items:center;gap:12px"}, avatarImg,
+          h("button",{class:"btn secondary",style:"padding:8px 14px",onclick:()=>avatarFile.click()},"Upload photo"), avatarFile)),
+      f("Font",fontSel),
+      h("div",{class:"field"},h("label",{},"Colours"),
+        h("div",{style:"display:flex;gap:18px;flex-wrap:wrap"},
+          h("label",{style:"display:flex;align-items:center;gap:8px;font-size:14px;color:#555"},accent,"Accent"),
+          h("label",{style:"display:flex;align-items:center;gap:8px;font-size:14px;color:#555"},bg,"Background"),
+          h("label",{style:"display:flex;align-items:center;gap:8px;font-size:14px;color:#555"},txt,"Text"))),
       h("h3",{class:"sub"},"Feeds"), f("Posts per page",perPage), h("label",{class:"ck"},inclReply,"Include replies in main feed"),
       h("h3",{class:"sub"},"Webmentions"),
       h("label",{class:"ck"},wmRecv,"Receive"),h("label",{class:"ck"},wmSend,"Send"),h("label",{class:"ck"},wmMod,"Hold for moderation"),
