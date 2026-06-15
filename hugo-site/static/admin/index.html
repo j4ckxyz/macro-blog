@@ -120,6 +120,8 @@
     .banner{background:#fff5f5;border:1px solid #f3c2c2;color:#a23;border-radius:10px;padding:10px 14px;margin:10px 0;font-size:14px}
     .banner a{color:#a23;font-weight:700;text-decoration:underline}
     .conn.reauth{color:#a23}
+    .hint{font-size:13px;color:#a23;background:#fff7f0;border:1px solid #f0d8c0;border-radius:8px;padding:8px 10px;margin-top:6px}
+    .logbox{background:#0d0f12;color:#d6e2ec;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.5;padding:14px;border-radius:10px;white-space:pre-wrap;overflow:auto;max-height:70vh;word-break:break-word}
 
     /* timeline */
     .tl-item{display:flex;gap:12px;padding:14px 2px;border-bottom:1px solid var(--line);color:var(--text)}
@@ -146,8 +148,8 @@
       .topbar .brand{margin:0}
       .topbar .name{font-size:20px}
       .topnew{width:42px;height:42px;border-radius:10px;border:1px solid #dfe2e6;background:#fff;color:var(--text);display:flex;align-items:center;justify-content:center}
-      .bottomnav{display:flex;position:fixed;bottom:0;left:0;right:0;z-index:30;background:var(--bg);border-top:1px solid var(--border);padding:6px 4px env(safe-area-inset-bottom)}
-      .bottomnav .tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 0;color:var(--muted);font-size:11px;font-weight:600}
+      .bottomnav{display:flex;position:fixed;bottom:0;left:0;right:0;z-index:30;background:var(--bg);border-top:1px solid var(--border);padding:6px 4px env(safe-area-inset-bottom);overflow-x:auto;-webkit-overflow-scrolling:touch}
+      .bottomnav .tab{flex:0 0 auto;min-width:62px;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 4px;color:var(--muted);font-size:11px;font-weight:600}
       .bottomnav .tab svg{width:24px;height:24px}
       .bottomnav .tab.active{color:var(--blue)}
       .post-head{font-size:18px}
@@ -202,6 +204,7 @@
     chev: svg('<path d="m6 9 6 6 6-6"/>'),
     home: svg('<path d="M3 9.5 12 3l9 6.5"/><path d="M5 10v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V10"/><path d="M9 21v-6h6v6"/>'),
     file: svg('<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/><path d="M8 13h8"/><path d="M8 17h8"/>'),
+    terminal: svg('<polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/>'),
   };
 
   async function api(path, opts={}){
@@ -246,6 +249,7 @@
     ["pages", "file", "Pages"],
     ["mentions", "at", "Mentions"],
     ["media", "image", "Uploads"],
+    ["logs", "terminal", "Logs"],
     ["settings", "gear", "Settings"],
   ];
 
@@ -270,6 +274,7 @@
         navItem("mentions",ICON.at,"Mentions"),
         navItem("media",ICON.image,"Uploads"),
         h("div",{class:"sep"}),
+        navItem("logs",ICON.terminal,"Logs"),
         navItem("settings",ICON.gear,"Settings"),
         h("a",{class:"sign-out",href:"#",onclick:e=>{e.preventDefault();localStorage.removeItem("mb_token");token="";renderLogin();}},"Sign out")));
 
@@ -277,12 +282,12 @@
     const topbar = h("div",{class:"topbar"},
       h("div",{class:"brand"}, h("div",{class:"mark",html:starSvg()}), h("div",{class:"name"},"Macroblog")),
       h("button",{class:"topnew",onclick:()=>go("composer"),html:ICON.pencil,title:"New Post"}));
-    const tabIds=["timeline","composer","posts","pages","mentions","settings"];
+    const tabIds=["timeline","composer","posts","pages","mentions","media","logs","settings"];
     const bottomnav = h("div",{class:"bottomnav"},
       ...tabIds.map(id=>{const [,,label]=NAV.find(n=>n[0]===id);return h("a",{class:"tab"+(active===id?" active":""),href:"#",onclick:e=>{e.preventDefault();go(id);},html:ICON[NAV.find(n=>n[0]===id)[1]]+`<span>${label}</span>`});}));
 
     root.append(h("div",{class:"shell"}, sidebar, topbar, main, bottomnav));
-    ({composer,timeline:timelineView,posts:postsView,pages:pagesView,media:mediaView,mentions:mentionsView,settings:settingsView}[active])(main);
+    ({composer,timeline:timelineView,posts:postsView,pages:pagesView,media:mediaView,mentions:mentionsView,logs:logsView,settings:settingsView}[active])(main);
   }
 
   // Banner shown when a platform token has expired and needs reconnecting.
@@ -329,8 +334,15 @@
         h("button",{class:"chip"+(t===type?" on":""),onclick:()=>{type=t;[...types.children].forEach((c,i)=>c.classList.toggle("on",["post","article","photo","bookmark"][i]===t));title.style.display=t==="article"?"block":"none";bookmarkRow.style.display=t==="bookmark"?"block":"none";}},l)));
     const bookmarkRow=h("div",{style:"display:none;margin-top:8px"},h("input",{class:"titlefield",placeholder:"Bookmark URL",oninput:e=>bookmarkUrl=e.target.value}));
     const xp=h("div",{style:"margin-top:10px"});
-    api("/api/oauth/bluesky").then(r=>r.json()).then(d=>{if(d.connected)xp.append(mkToggle("bluesky","🦋 Cross-post to Bluesky"));});
-    api("/api/oauth/mastodon").then(r=>r.json()).then(d=>{if(d.connected)xp.append(mkToggle("mastodon","🐘 Cross-post to Mastodon"));});
+    const notConnected=(name)=>h("div",{class:"hint"},"⚠ "+name+" is enabled but not connected. Open Settings → Cross-posting and click Connect.");
+    api("/api/oauth/bluesky").then(r=>r.json()).then(d=>{
+      if(d.connected) xp.append(mkToggle("bluesky", d.needs_reauth?"🦋 Bluesky — reconnect needed":"🦋 Cross-post to Bluesky"));
+      else if(cfg.crossposting&&cfg.crossposting.bluesky&&cfg.crossposting.bluesky.enabled) xp.append(notConnected("Bluesky"));
+    });
+    api("/api/oauth/mastodon").then(r=>r.json()).then(d=>{
+      if(d.connected) xp.append(mkToggle("mastodon", d.needs_reauth?"🐘 Mastodon — reconnect needed":"🐘 Cross-post to Mastodon"));
+      else if(cfg.crossposting&&cfg.crossposting.mastodon&&cfg.crossposting.mastodon.enabled) xp.append(notConnected("Mastodon"));
+    });
 
     const menu=h("div",{class:"menu",style:"display:none"},
       h("div",{class:"menu-label"},"Post type"), types,
@@ -520,6 +532,26 @@
           h("button",{class:"btn secondary",style:"padding:6px 12px;color:#d33",onclick:async()=>{await api("/api/webmentions/"+w.id,{method:"PATCH",json:{status:"rejected"}});reload();}},"Reject"))
         :h("span",{style:"color:#8a9099"},w.status)));
     }
+  }
+
+  /* ---------------- logs ---------------- */
+  async function logsView(view){
+    const pre=h("pre",{class:"logbox"},"Loading…");
+    const status=h("span",{style:"font-size:13px;margin-left:8px;color:#2a8a4a"});
+    const load=async()=>{ const t=await (await api("/api/logs")).text(); pre.textContent=t; pre.scrollTop=pre.scrollHeight; };
+    view.append(h("div",{class:"viewhead"},h("h2",{class:"section"},"Logs"),
+      h("div",{style:"display:flex;gap:8px;flex-wrap:wrap"},
+        h("button",{class:"btn primary",style:"padding:7px 14px",onclick:async()=>{
+          try{ await navigator.clipboard.writeText(pre.textContent||""); status.textContent="✓ Copied"; }
+          catch{ const r=document.createRange(); r.selectNodeContents(pre); const s=getSelection(); s.removeAllRanges(); s.addRange(r); document.execCommand("copy"); status.textContent="✓ Copied"; }
+          setTimeout(()=>status.textContent="",2000);
+        }},"Copy logs"),
+        h("button",{class:"btn secondary",style:"padding:7px 14px",onclick:load},"↻ Refresh"),
+        h("button",{class:"btn secondary",style:"padding:7px 14px;color:#d33",onclick:async()=>{await api("/api/logs",{method:"DELETE"});load();}},"Clear"),
+        status)));
+    view.append(h("p",{style:"color:#8a9099;font-size:14px;margin:2px 0 10px"},"Everything happening on the server: Hugo builds, cross-posting, webmentions, requests."),
+      pre);
+    load();
   }
 
   /* ---------------- settings ---------------- */

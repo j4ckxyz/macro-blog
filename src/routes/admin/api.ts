@@ -16,6 +16,7 @@ import {
   queueSyndication,
   retrySyndication,
   processPending,
+  dispatchSoon,
 } from "../../services/syndication.ts";
 import { triggerBuild, fullBuild, getBuildStatus } from "../../services/hugo.ts";
 import { isConnected, getTokenExtra, deleteToken, needsReauth } from "../../lib/tokens.ts";
@@ -34,6 +35,7 @@ import { pollReplies } from "../../services/reply-poller.ts";
 import { replyMastodon } from "../../services/crosspost/mastodon.ts";
 import { replyBluesky } from "../../services/crosspost/bluesky.ts";
 import { createBackup } from "../../services/backup.ts";
+import { getLogsText, clearLogs } from "../../lib/logger.ts";
 import { HUGO_SITE } from "../../services/content.ts";
 import { readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
@@ -89,7 +91,10 @@ adminApi.post("/posts", async (c) => {
   }
   const written = await createPost(create);
   const post = getPostBySlug(written.slug)!;
-  if (create.syndicateTo.length) queueSyndication(post.id, create.syndicateTo);
+  if (create.syndicateTo.length) {
+    queueSyndication(post.id, create.syndicateTo);
+    dispatchSoon();
+  }
   triggerBuild();
   return c.json(await fullPost(post), 201);
 });
@@ -372,6 +377,13 @@ adminApi.get("/backup", async (c) => {
   c.header("content-type", "application/gzip");
   c.header("content-disposition", `attachment; filename="${file.split("/").pop()}"`);
   return c.body(data);
+});
+
+// --- Logs (everything: hugo, crossposting, webmentions, requests) ---
+adminApi.get("/logs", (c) => c.text(getLogsText() || "(no logs yet)"));
+adminApi.delete("/logs", (c) => {
+  clearLogs();
+  return c.json({ ok: true });
 });
 
 // --- Hugo ---

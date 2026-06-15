@@ -32,7 +32,18 @@ export function queueSyndication(
       postId,
       platform,
     );
+    console.log(`[syndication] queued post ${postId} → ${platform}`);
   }
+}
+
+/**
+ * Dispatch any pending syndications right away (called after publishing so
+ * cross-posts go out immediately instead of waiting for the 60s scheduler).
+ */
+export function dispatchSoon(): void {
+  queueMicrotask(() => {
+    processPending().catch((e) => console.error("[syndication] dispatch error:", (e as Error).message));
+  });
 }
 
 /** Strip Markdown to a plain-text representation for cross-posting. */
@@ -83,17 +94,18 @@ export async function dispatchOne(syn: SyndicationRow, db: Database = getDb()): 
     return;
   }
   try {
+    console.log(`[syndication] dispatching post "${post.slug}" → ${syn.platform}…`);
     const payload = await buildPayload(post);
     const result = await DISPATCHERS[syn.platform as Platform](payload);
     db.query(
       "UPDATE syndications SET status = 'success', remote_id = ?, remote_url = ?, error = NULL WHERE id = ?",
     ).run(result.remoteId, result.remoteUrl, syn.id);
     await addSyndicationUrl(post, result.remoteUrl);
+    console.log(`[syndication] ✓ ${syn.platform}: ${result.remoteUrl}`);
   } catch (err) {
-    db.query("UPDATE syndications SET status = 'failed', error = ? WHERE id = ?").run(
-      (err as Error).message,
-      syn.id,
-    );
+    const msg = (err as Error).message;
+    db.query("UPDATE syndications SET status = 'failed', error = ? WHERE id = ?").run(msg, syn.id);
+    console.error(`[syndication] ✗ ${syn.platform} failed for "${post.slug}": ${msg}`);
   }
 }
 
