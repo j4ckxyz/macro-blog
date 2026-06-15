@@ -18,7 +18,8 @@ import {
   processPending,
 } from "../../services/syndication.ts";
 import { triggerBuild, fullBuild, getBuildStatus } from "../../services/hugo.ts";
-import { isConnected, getTokenExtra, deleteToken } from "../../lib/tokens.ts";
+import { isConnected, getTokenExtra, deleteToken, needsReauth } from "../../lib/tokens.ts";
+import { getTimeline, refreshTimeline } from "../../services/timeline.ts";
 import { hashPassword } from "../../lib/indieauth.ts";
 import { pollReplies } from "../../services/reply-poller.ts";
 import { replyMastodon } from "../../services/crosspost/mastodon.ts";
@@ -219,15 +220,30 @@ adminApi.post("/mentions/:id/reply", async (c) => {
   }
 });
 
+// --- Timeline (following feed, cached server-side) ---
+adminApi.get("/timeline", (c) => {
+  const limit = Number(c.req.query("limit") ?? 100);
+  return c.json({
+    items: getTimeline(limit),
+    bluesky: { connected: isConnected("bluesky"), needs_reauth: needsReauth("bluesky") },
+    mastodon: { connected: isConnected("mastodon"), needs_reauth: needsReauth("mastodon") },
+  });
+});
+
+adminApi.post("/timeline/refresh", async (c) => {
+  const result = await refreshTimeline();
+  return c.json(result);
+});
+
 // --- OAuth status / disconnect ---
 adminApi.get("/oauth/bluesky", (c) => {
   const extra = getTokenExtra("bluesky");
-  return c.json({ connected: isConnected("bluesky"), handle: extra.handle ?? null });
+  return c.json({ connected: isConnected("bluesky"), handle: extra.handle ?? null, needs_reauth: needsReauth("bluesky") });
 });
 
 adminApi.get("/oauth/mastodon", (c) => {
   const extra = getTokenExtra("mastodon");
-  return c.json({ connected: isConnected("mastodon"), instance: extra.instance ?? null });
+  return c.json({ connected: isConnected("mastodon"), instance: extra.instance ?? null, needs_reauth: needsReauth("mastodon") });
 });
 
 adminApi.post("/oauth/:platform/disconnect", (c) => {

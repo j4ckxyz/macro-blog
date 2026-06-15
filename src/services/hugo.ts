@@ -1,6 +1,6 @@
 import { $ } from "bun";
 import { resolve, join } from "node:path";
-import { mkdir } from "node:fs/promises";
+import { mkdir, rm, rename } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { getDb } from "../db/index.ts";
 import { getConfig } from "../lib/config.ts";
@@ -49,15 +49,19 @@ async function doFullBuild(): Promise<void> {
   const cfg = getConfig();
   const start = Date.now();
   status.running = true;
+  // Build into a staging dir and only swap it into place on success, so a
+  // failed build can NEVER take down the live site.
+  const stageDir = PUBLIC_DIR + ".next";
   try {
-    await mkdir(PUBLIC_DIR, { recursive: true });
+    await rm(stageDir, { recursive: true, force: true });
+    await mkdir(stageDir, { recursive: true });
     await writeWebmentionData();
 
     const themeSeconds = String(Math.floor(Date.now() / 1000));
     const bin = cfg.hugo.binary || "hugo";
     const args = [
       "-s", HUGO_SITE,
-      "-d", PUBLIC_DIR,
+      "-d", stageDir,
       "-b", cfg.site.url,
       "--cleanDestinationDir",
       "--logLevel", "warn",
@@ -88,10 +92,25 @@ async function doFullBuild(): Promise<void> {
       proc.exited,
     ]);
     status.log = (out + "\n" + err).trim();
-    status.lastSuccess = code === 0;
-    if (code !== 0) {
-      throw new Error(`hugo exited ${code}: ${err}`);
+
+    // A build that "succeeds" but produced no home page is still a failure.
+    const ok = code === 0 && existsSync(join(stageDir, "index.html"));
+    status.lastSuccess = ok;
+    if (!ok) {
+      console.error(
+        `[hugo] build FAILED (exit ${code}). Live site left untouched.\n` +
+          (status.log || "(no output)"),
+      );
+      await rm(stageDir, { recursive: true, force: true });
+      throw new Error(`hugo build failed (exit ${code})`);
     }
+
+    // Atomic-ish swap: move the old output aside, move staging in, drop the old.
+    const bakDir = PUBLIC_DIR + ".bak";
+    await rm(bakDir, { recursive: true, force: true });
+    if (existsSync(PUBLIC_DIR)) await rename(PUBLIC_DIR, bakDir);
+    await rename(stageDir, PUBLIC_DIR);
+    await rm(bakDir, { recursive: true, force: true });
 
     await runPagefind();
   } finally {

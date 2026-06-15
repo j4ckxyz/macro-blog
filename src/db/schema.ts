@@ -125,6 +125,25 @@ CREATE TABLE IF NOT EXISTS social_replies (
   UNIQUE(platform, remote_id)
 );
 
+-- Cached "following" timeline pulled from Bluesky + Mastodon (server-side) so
+-- the Timeline tab loads instantly when the webapp opens.
+CREATE TABLE IF NOT EXISTS timeline (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  platform TEXT NOT NULL,              -- bluesky, mastodon
+  remote_id TEXT NOT NULL,            -- at:// uri or status id
+  author_name TEXT,
+  author_handle TEXT,
+  author_avatar TEXT,
+  author_url TEXT,
+  content TEXT,
+  url TEXT,
+  media_json TEXT,                     -- JSON array of {url, alt}
+  reposted_by TEXT,
+  created_at TEXT,                     -- post timestamp (ISO)
+  fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(platform, remote_id)
+);
+
 -- Uploaded media
 CREATE TABLE IF NOT EXISTS media (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -250,6 +269,22 @@ export interface SocialReplyRow {
   published: string | null;
   replied: number;
   created_at: string;
+}
+
+export interface TimelineRow {
+  id: number;
+  platform: string;
+  remote_id: string;
+  author_name: string | null;
+  author_handle: string | null;
+  author_avatar: string | null;
+  author_url: string | null;
+  content: string | null;
+  url: string | null;
+  media_json: string | null;
+  reposted_by: string | null;
+  created_at: string | null;
+  fetched_at: string;
 }
 
 export interface MediaRow {

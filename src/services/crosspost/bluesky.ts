@@ -1,7 +1,8 @@
-import { getToken, getTokenExtra, saveToken } from "../../lib/tokens.ts";
+import { getToken, getTokenExtra, saveToken, setReauth } from "../../lib/tokens.ts";
 import { dpopFetch, type DpopKeypair } from "../../lib/dpop.ts";
 import { refreshBlueskyToken } from "../../routes/oauth/bluesky.ts";
 import type { CrosspostPayload, CrosspostResult } from "./types.ts";
+import type { NormalizedTimelineItem } from "../timeline.ts";
 
 const MAX_GRAPHEMES = 300;
 
@@ -33,7 +34,14 @@ async function ensureFreshToken(): Promise<void> {
   const token = getToken("bluesky");
   if (!token) throw new Error("bluesky not connected");
   if (token.expires_at && new Date(token.expires_at).getTime() <= Date.now() + 30_000) {
-    await refreshBlueskyToken();
+    try {
+      await refreshBlueskyToken();
+      setReauth("bluesky", false);
+    } catch (err) {
+      // Refresh token rejected → the user must reconnect.
+      setReauth("bluesky", true);
+      throw err;
+    }
   }
 }
 
@@ -60,8 +68,13 @@ async function xrpc(
     saveToken("bluesky", { extra: { ...getTokenExtra("bluesky"), dpop_nonce: nonce } });
   }
   if (!res.ok) {
-    throw new Error(`xrpc ${nsid} failed: ${res.status} ${await res.text()}`);
+    const body = await res.text();
+    if (res.status === 401 || /invalid_token|expired/i.test(body)) {
+      setReauth("bluesky", true);
+    }
+    throw new Error(`xrpc ${nsid} failed: ${res.status} ${body}`);
   }
+  setReauth("bluesky", false);
   return res.json();
 }
 
@@ -203,6 +216,42 @@ export async function replyBluesky(
   const rkey = (result.uri as string).split("/").pop();
   const handle = getTokenExtra("bluesky").handle || session.did;
   return { remoteId: result.uri, remoteUrl: `https://bsky.app/profile/${handle}/post/${rkey}` };
+}
+
+/** Fetch the authenticated user's following feed (home timeline). */
+export async function fetchBlueskyTimeline(limit = 50): Promise<NormalizedTimelineItem[]> {
+  await ensureFreshToken();
+  const session = loadSession();
+  const result = await xrpc(session, "app.bsky.feed.getTimeline", "GET", undefined, {
+    limit: String(limit),
+  });
+  const items: NormalizedTimelineItem[] = [];
+  for (const entry of result?.feed ?? []) {
+    const p = entry.post;
+    if (!p) continue;
+    const handle = p.author?.handle;
+    const rkey = (p.uri as string).split("/").pop();
+    const media = (p.embed?.images ?? p.embed?.media?.images ?? []).map((im: any) => ({
+      url: im.fullsize || im.thumb || "",
+      alt: im.alt || "",
+    }));
+    const repost = entry.reason?.$type?.includes("reasonRepost")
+      ? entry.reason?.by?.displayName || entry.reason?.by?.handle
+      : null;
+    items.push({
+      platform: "bluesky",
+      remoteId: p.uri,
+      author: p.author?.displayName || handle || "",
+      authorHandle: handle ? "@" + handle : "",
+      avatar: p.author?.avatar || "",
+      content: p.record?.text || "",
+      url: handle ? `https://bsky.app/profile/${handle}/post/${rkey}` : "",
+      media,
+      repostedBy: repost,
+      createdAt: p.record?.createdAt || p.indexedAt || new Date().toISOString(),
+    });
+  }
+  return items;
 }
 
 /** Fetch replies to a syndicated post via getPostThread, plus the thread root. */

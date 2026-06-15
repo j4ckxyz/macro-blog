@@ -115,7 +115,53 @@
     .login .btn{width:100%;margin-top:14px}
     .err{color:#d33;font-size:14px;margin-top:10px;min-height:18px}
 
-    @media(max-width:720px){.sidebar{display:none}.main{padding:18px}}
+    /* shared */
+    .viewhead{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+    .banner{background:#fff5f5;border:1px solid #f3c2c2;color:#a23;border-radius:10px;padding:10px 14px;margin:10px 0;font-size:14px}
+    .banner a{color:#a23;font-weight:700;text-decoration:underline}
+    .conn.reauth{color:#a23}
+
+    /* timeline */
+    .tl-item{display:flex;gap:12px;padding:14px 2px;border-bottom:1px solid var(--line);color:var(--text)}
+    .tl-item:hover{background:#fafbfc}
+    .tl-avatar{width:44px;height:44px;border-radius:50%;object-fit:cover;background:#dde1e6;flex:0 0 44px}
+    .tl-body{min-width:0;flex:1}
+    .tl-repost{font-size:12px;color:var(--muted);margin-bottom:2px}
+    .tl-meta{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;font-size:14px}
+    .tl-author{font-weight:700}
+    .tl-handle,.tl-dot,.tl-time{color:var(--muted)}
+    .tl-badge{margin-left:auto}
+    .tl-text{margin-top:3px;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.45}
+    .tl-media{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-top:8px}
+    .tl-media img{width:100%;max-height:280px;object-fit:cover;border-radius:10px;border:1px solid var(--border)}
+
+    /* mobile chrome (hidden on desktop) */
+    .topbar,.bottomnav{display:none}
+
+    @media(max-width:760px){
+      .sidebar{display:none}
+      .shell{flex-direction:column}
+      .main{padding:14px 14px 84px}           /* room for bottom nav */
+      .topbar{display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:20;background:var(--bg);border-bottom:1px solid var(--border);padding:10px 14px}
+      .topbar .brand{margin:0}
+      .topbar .name{font-size:20px}
+      .topnew{width:42px;height:42px;border-radius:10px;border:1px solid #dfe2e6;background:#fff;color:var(--text);display:flex;align-items:center;justify-content:center}
+      .bottomnav{display:flex;position:fixed;bottom:0;left:0;right:0;z-index:30;background:var(--bg);border-top:1px solid var(--border);padding:6px 4px env(safe-area-inset-bottom)}
+      .bottomnav .tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 0;color:var(--muted);font-size:11px;font-weight:600}
+      .bottomnav .tab svg{width:24px;height:24px}
+      .bottomnav .tab.active{color:var(--blue)}
+      .post-head{font-size:18px}
+      .editor{font-size:16px;min-height:46vh;padding:14px}     /* 16px avoids iOS zoom */
+      .composer{max-width:none}
+      .toolbar{gap:6px;flex-wrap:wrap}
+      .tbtn{width:42px;height:40px}
+      .btn{padding:10px 16px}
+      .field,.field input,.field select{max-width:none}
+      .titlefield,.editor,.replybox{width:100%}
+      .grid{grid-template-columns:repeat(3,1fr)}
+      .count{font-size:14px}
+    }
+    @media(max-width:380px){ .bottomnav .tab span{display:none} }
   </style>
 </head>
 <body>
@@ -154,6 +200,7 @@
     italic: svg('<line x1="19" x2="10" y1="4" y2="4"/><line x1="14" x2="5" y1="20" y2="20"/><line x1="15" x2="9" y1="4" y2="20"/>'),
     link: svg('<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>'),
     chev: svg('<path d="m6 9 6 6 6-6"/>'),
+    home: svg('<path d="M3 9.5 12 3l9 6.5"/><path d="M5 10v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V10"/><path d="M9 21v-6h6v6"/>'),
   };
 
   async function api(path, opts={}){
@@ -191,20 +238,31 @@
 
   function host(){ try{ return new URL(cfg.site.url).host; }catch{ return cfg.site.url; } }
 
+  const NAV = [
+    ["composer", "pencil", "New Post"],
+    ["timeline", "home", "Timeline"],
+    ["posts", "posts", "Posts"],
+    ["mentions", "at", "Mentions"],
+    ["media", "image", "Uploads"],
+    ["settings", "gear", "Settings"],
+  ];
+
   function renderApp(){
     root.innerHTML="";
     const main = h("div",{class:"main"});
-    const navItem=(id,icon,label)=>h("a",{class:"nav-a"+(active===id?" active":""),href:"#",onclick:e=>{e.preventDefault();active=id;renderApp();}},
+    const go=(id)=>{active=id;renderApp();window.scrollTo(0,0);};
+    const navItem=(id,icon,label)=>h("a",{class:"nav-a"+(active===id?" active":""),href:"#",onclick:e=>{e.preventDefault();go(id);}},
       h("span",{class:"ic",html:icon}), label);
 
     const sidebar = h("div",{class:"sidebar"},
       h("div",{class:"brand"}, h("div",{class:"mark",html:starSvg()}), h("div",{class:"name"},"Macroblog")),
-      h("button",{class:"newpost",onclick:()=>{active="composer";renderApp();}}, h("span",{class:"ic",html:ICON.pencil}), "New Post"),
+      h("button",{class:"newpost",onclick:()=>go("composer")}, h("span",{class:"ic",html:ICON.pencil}), "New Post"),
       h("div",{class:"account"},
         h("img",{class:"avatar",src:(cfg.site.avatar||""),alt:"",onerror:"this.style.visibility='hidden'"}),
         h("span",{class:"handle"},"@"+(cfg.site.username||"me")),
         h("span",{class:"chev",html:ICON.chev})),
       h("nav",{class:"nav"},
+        navItem("timeline",ICON.home,"Timeline"),
         navItem("posts",ICON.posts,"Posts"),
         navItem("mentions",ICON.at,"Mentions"),
         navItem("media",ICON.image,"Uploads"),
@@ -212,9 +270,26 @@
         navItem("settings",ICON.gear,"Settings"),
         h("a",{class:"sign-out",href:"#",onclick:e=>{e.preventDefault();localStorage.removeItem("mb_token");token="";renderLogin();}},"Sign out")));
 
-    root.append(h("div",{class:"shell"}, sidebar, main));
-    ({composer,posts:postsView,media:mediaView,mentions:mentionsView,settings:settingsView}[active])(main);
+    // Mobile top bar + bottom tab bar (shown via CSS on small screens).
+    const topbar = h("div",{class:"topbar"},
+      h("div",{class:"brand"}, h("div",{class:"mark",html:starSvg()}), h("div",{class:"name"},"Macroblog")),
+      h("button",{class:"topnew",onclick:()=>go("composer"),html:ICON.pencil,title:"New Post"}));
+    const tabIds=["timeline","composer","posts","mentions","settings"];
+    const bottomnav = h("div",{class:"bottomnav"},
+      ...tabIds.map(id=>{const [,,label]=NAV.find(n=>n[0]===id);return h("a",{class:"tab"+(active===id?" active":""),href:"#",onclick:e=>{e.preventDefault();go(id);},html:ICON[NAV.find(n=>n[0]===id)[1]]+`<span>${label}</span>`});}));
+
+    root.append(h("div",{class:"shell"}, sidebar, topbar, main, bottomnav));
+    ({composer,timeline:timelineView,posts:postsView,media:mediaView,mentions:mentionsView,settings:settingsView}[active])(main);
   }
+
+  // Banner shown when a platform token has expired and needs reconnecting.
+  function reauthBanner(platform, status){
+    if(!status || !status.needs_reauth) return null;
+    const name = platform==="bluesky"?"Bluesky":"Mastodon";
+    return h("div",{class:"banner"}, `⚠ Your ${name} connection expired. `,
+      h("a",{href:"#",onclick:e=>{e.preventDefault();go0("settings");}},"Reconnect in Settings →"));
+  }
+  function go0(id){active=id;renderApp();window.scrollTo(0,0);}
 
   /* ---------------- composer ---------------- */
   function composer(view){
@@ -329,12 +404,52 @@
     view.append(grid);
   }
 
+  /* ---------------- timeline (following feed) ---------------- */
+  function timeAgo(iso){
+    if(!iso) return "";
+    const s=Math.floor((Date.now()-new Date(iso).getTime())/1000);
+    if(s<60) return s+"s"; if(s<3600) return Math.floor(s/60)+"m";
+    if(s<86400) return Math.floor(s/3600)+"h"; return Math.floor(s/86400)+"d";
+  }
+  async function timelineView(view){
+    const head=h("div",{class:"viewhead"},h("h2",{class:"section"},"Timeline"),
+      h("button",{class:"btn secondary",style:"padding:7px 14px",onclick:async()=>{view.innerHTML="";view.append(h("p",{style:"color:#8a9099"},"Refreshing…"));await api("/api/timeline/refresh",{method:"POST"});view.innerHTML="";timelineView(view);}},"↻ Refresh"));
+    view.append(head);
+    const data=await (await api("/api/timeline")).json();
+    const b=reauthBanner("bluesky",data.bluesky); if(b)view.append(b);
+    const m=reauthBanner("mastodon",data.mastodon); if(m)view.append(m);
+
+    if(!data.items.length){
+      const anyConn=data.bluesky.connected||data.mastodon.connected;
+      view.append(h("p",{style:"color:#8a9099;margin-top:10px"},
+        anyConn?"No posts yet — tap Refresh in a moment.":"Connect Bluesky or Mastodon in Settings to see your following feed."));
+      return;
+    }
+    const badge={bluesky:"🦋",mastodon:"🐘"};
+    for(const it of data.items){
+      const media=h("div",{class:"tl-media"},...(it.media||[]).slice(0,4).map(mm=>h("img",{src:mm.url,alt:mm.alt||"",loading:"lazy"})));
+      view.append(h("a",{class:"tl-item",href:it.url||"#",target:"_blank",rel:"noopener"},
+        h("img",{class:"tl-avatar",src:it.avatar||"",alt:"",onerror:"this.style.visibility='hidden'"}),
+        h("div",{class:"tl-body"},
+          it.repostedBy?h("div",{class:"tl-repost"},"🔁 "+it.repostedBy+" reposted"):null,
+          h("div",{class:"tl-meta"},h("span",{class:"tl-author"},it.author||it.authorHandle),
+            h("span",{class:"tl-handle"},it.authorHandle),
+            h("span",{class:"tl-dot"},"·"),h("span",{class:"tl-time"},timeAgo(it.createdAt)),
+            h("span",{class:"tl-badge"},badge[it.platform]||"")),
+          h("div",{class:"tl-text"},it.content||""),
+          (it.media&&it.media.length)?media:null)));
+    }
+  }
+
   /* ---------------- mentions ---------------- */
   async function mentionsView(view){
     const reload=()=>{view.innerHTML="";mentionsView(view);};
-    view.append(h("div",{style:"display:flex;align-items:center;justify-content:space-between"},
+    view.append(h("div",{class:"viewhead"},
       h("h2",{class:"section"},"Mentions"),
       h("button",{class:"btn secondary",style:"padding:7px 14px",onclick:async()=>{await api("/api/mentions/poll",{method:"POST"});reload();}},"↻ Poll replies")));
+    const [bsS,maS]=await Promise.all([api("/api/oauth/bluesky").then(r=>r.json()),api("/api/oauth/mastodon").then(r=>r.json())]);
+    const bb=reauthBanner("bluesky",bsS); if(bb)view.append(bb);
+    const mb=reauthBanner("mastodon",maS); if(mb)view.append(mb);
     const {webmentions,social}=await (await api("/api/mentions")).json();
     const icon={bluesky:"🦋",mastodon:"🐘"};
     if(social.length) view.append(h("h3",{class:"sub"},"Replies"));
@@ -397,14 +512,21 @@
       h("h3",{class:"sub"},"Webmentions"),
       h("label",{class:"ck"},wmRecv,"Receive"),h("label",{class:"ck"},wmSend,"Send"),h("label",{class:"ck"},wmMod,"Hold for moderation"),
       h("h3",{class:"sub"},"Cross-posting"),
-      h("label",{class:"ck"},bsEnabled,"Bluesky enabled"), f("Bluesky handle",bsHandle),
+      h("label",{class:"ck"},bsEnabled,"Bluesky enabled"),
+      f("Bluesky handle (any handle — e.g. you.bsky.social)",bsHandle),
       h("div",{class:"field"}, bs.connected
-        ? h("div",{class:"conn"},h("span",{},"✓ Connected as "+(bs.handle||"?")),h("button",{class:"btn secondary danger",onclick:async()=>{await api("/api/oauth/bluesky/disconnect",{method:"POST"});reload();}},"Disconnect"))
-        : h("button",{class:"btn secondary",onclick:()=>location.href="/oauth/bluesky/connect"},"Connect Bluesky")),
+        ? h("div",{class:"conn"+(bs.needs_reauth?" reauth":"")},
+            h("span",{},bs.needs_reauth?("⚠ Reconnect needed ("+(bs.handle||"?")+")"):("✓ Connected as "+(bs.handle||"?"))),
+            bs.needs_reauth?h("button",{class:"btn secondary",onclick:()=>location.href="/oauth/bluesky/connect?handle="+encodeURIComponent(bsHandle.value||bs.handle||"")},"Reconnect"):null,
+            h("button",{class:"btn secondary danger",onclick:async()=>{await api("/api/oauth/bluesky/disconnect",{method:"POST"});reload();}},"Disconnect"))
+        : h("button",{class:"btn secondary",onclick:()=>{const hn=(bsHandle.value||"").trim();if(!hn){toast.textContent="Enter your Bluesky handle first.";return;}location.href="/oauth/bluesky/connect?handle="+encodeURIComponent(hn);}},"Connect Bluesky")),
       h("label",{class:"ck"},mEnabled,"Mastodon enabled"), f("Mastodon instance",mInst),
       h("div",{class:"field"}, ma.connected
-        ? h("div",{class:"conn"},h("span",{},"✓ Connected ("+(ma.instance||"?")+")"),h("button",{class:"btn secondary danger",onclick:async()=>{await api("/api/oauth/mastodon/disconnect",{method:"POST"});reload();}},"Disconnect"))
-        : h("button",{class:"btn secondary",onclick:()=>location.href="/oauth/mastodon/connect?instance="+encodeURIComponent(mInst.value)},"Connect Mastodon")),
+        ? h("div",{class:"conn"+(ma.needs_reauth?" reauth":"")},
+            h("span",{},ma.needs_reauth?("⚠ Reconnect needed ("+(ma.instance||"?")+")"):("✓ Connected ("+(ma.instance||"?")+")")),
+            ma.needs_reauth?h("button",{class:"btn secondary",onclick:()=>location.href="/oauth/mastodon/connect?instance="+encodeURIComponent(ma.instance||mInst.value)},"Reconnect"):null,
+            h("button",{class:"btn secondary danger",onclick:async()=>{await api("/api/oauth/mastodon/disconnect",{method:"POST"});reload();}},"Disconnect"))
+        : h("button",{class:"btn secondary",onclick:()=>{const inst=(mInst.value||"").trim();if(!inst){toast.textContent="Enter your Mastodon instance URL first.";return;}location.href="/oauth/mastodon/connect?instance="+encodeURIComponent(inst);}},"Connect Mastodon")),
       h("label",{class:"ck"},ping,"Ping Micro.blog on publish"),
       h("h3",{class:"sub"},"Theme"), f("Active theme (drop into hugo-site/themes/)",themeSel),
       h("button",{class:"btn primary",style:"margin-top:6px",onclick:save},"Save settings"),

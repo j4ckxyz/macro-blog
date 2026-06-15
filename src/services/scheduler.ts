@@ -12,9 +12,11 @@ import { processPending } from "./syndication.ts";
 import { processQueue } from "./webmention-send.ts";
 import { scheduleFullBuild } from "./hugo.ts";
 import { pollReplies } from "./reply-poller.ts";
+import { refreshTimeline } from "./timeline.ts";
 
 let timer: ReturnType<typeof setInterval> | null = null;
 let replyTimer: ReturnType<typeof setInterval> | null = null;
+let timelineTimer: ReturnType<typeof setInterval> | null = null;
 
 /** Publish any scheduled posts whose time has arrived. */
 export async function publishDuePosts(db: Database = getDb()): Promise<number> {
@@ -56,11 +58,20 @@ export function startScheduler(intervalMs = 60_000): void {
   replyTimer = setInterval(() => {
     pollReplies().catch((e) => console.error("[reply-poll]", e));
   }, 15 * 60_000);
+  // Following-timeline refresh every 5 minutes (+ once shortly after boot).
+  timelineTimer = setInterval(() => {
+    refreshTimeline().catch((e) => console.error("[timeline]", e));
+  }, 5 * 60_000);
+  setTimeout(() => {
+    refreshTimeline().catch((e) => console.error("[timeline]", e));
+  }, 4000);
 }
 
 export function stopScheduler(): void {
   if (timer) clearInterval(timer);
   if (replyTimer) clearInterval(replyTimer);
+  if (timelineTimer) clearInterval(timelineTimer);
   timer = null;
   replyTimer = null;
+  timelineTimer = null;
 }

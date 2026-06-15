@@ -18,11 +18,12 @@ import { saveToken, getToken, getTokenExtra } from "../../lib/tokens.ts";
 export const bluesky = new Hono();
 
 /**
- * Minimal granular permission scopes Macroblog actually needs:
- *  - `atproto`                          base identity (required)
- *  - `repo:app.bsky.feed.post`          create posts and replies only
- *  - `blob:image/*`                     upload images for photo posts
- *  - `rpc:app.bsky.feed.getPostThread`  read replies for the Mentions tab
+ * Minimal granular permission scopes Macroblog actually needs — and ONLY these:
+ *  - `atproto`                          authenticate (required)
+ *  - `repo:app.bsky.feed.post`          create posts AND replies
+ *  - `blob:image/*`                     upload media for photo posts
+ *  - `rpc:app.bsky.feed.getTimeline`    read your following feed (Timeline tab)
+ *  - `rpc:app.bsky.feed.getPostThread`  read replies (Mentions tab)
  *
  * This intentionally does NOT grant access to follows, likes, DMs, profile
  * edits, account settings, or arbitrary record types. Override via
@@ -32,6 +33,7 @@ export const BLUESKY_SCOPES = [
   "atproto",
   "repo:app.bsky.feed.post",
   "blob:image/*",
+  "rpc:app.bsky.feed.getTimeline",
   "rpc:app.bsky.feed.getPostThread",
 ].join(" ");
 
