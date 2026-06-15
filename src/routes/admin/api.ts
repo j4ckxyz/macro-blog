@@ -31,9 +31,10 @@ import {
   pagePermalink,
 } from "../../services/pages.ts";
 import { hashPassword } from "../../lib/indieauth.ts";
-import { pollReplies } from "../../services/reply-poller.ts";
-import { replyMastodon } from "../../services/crosspost/mastodon.ts";
-import { replyBluesky } from "../../services/crosspost/bluesky.ts";
+import { pollReplies, pollMentions } from "../../services/reply-poller.ts";
+import { replyMastodonThread } from "../../services/crosspost/mastodon.ts";
+import { replyBlueskyThread } from "../../services/crosspost/bluesky.ts";
+import { splitPostIntoThread } from "../../services/crosspost/thread.ts";
 import { createBackup } from "../../services/backup.ts";
 import { getLogsText, clearLogs } from "../../lib/logger.ts";
 import { HUGO_SITE } from "../../services/content.ts";
@@ -287,21 +288,23 @@ adminApi.get("/mentions", (c) => {
 });
 
 adminApi.post("/mentions/poll", async (c) => {
-  const n = await pollReplies();
-  return c.json({ fetched: n });
+  const [replies, mentions] = await Promise.all([pollReplies(), pollMentions()]);
+  return c.json({ fetched: replies + mentions, replies, mentions });
 });
 
-// Reply to a Bluesky/Mastodon reply in one place.
+// Reply to a Bluesky/Mastodon mention/reply. Longer replies are auto-chunked
+// into a thread (same paragraph→sentence splitting as cross-posts).
 adminApi.post("/mentions/:id/reply", async (c) => {
   const id = Number(c.req.param("id"));
   const { text } = await c.req.json();
-  if (!text || typeof text !== "string") return c.json({ error: "text required" }, 400);
+  if (!text || typeof text !== "string" || !text.trim()) return c.json({ error: "text required" }, 400);
   const row = getDb().query("SELECT * FROM social_replies WHERE id = ?").get(id) as SocialReplyRow | null;
   if (!row) return c.json({ error: "not_found" }, 404);
 
   try {
     if (row.platform === "mastodon") {
-      const r = await replyMastodon(row.remote_id, text);
+      const chunks = splitPostIntoThread(text, 480, "", false);
+      const r = await replyMastodonThread(row.remote_id, chunks);
       getDb().query("UPDATE social_replies SET replied = 1 WHERE id = ?").run(id);
       return c.json({ ok: true, url: r.url });
     }
@@ -309,10 +312,11 @@ adminApi.post("/mentions/:id/reply", async (c) => {
       if (!row.remote_cid || !row.root_id || !row.root_cid) {
         return c.json({ error: "missing thread refs; re-poll mentions first" }, 400);
       }
-      const r = await replyBluesky(
+      const chunks = splitPostIntoThread(text, 280, "", false);
+      const r = await replyBlueskyThread(
         { uri: row.remote_id, cid: row.remote_cid },
         { uri: row.root_id, cid: row.root_cid },
-        text,
+        chunks,
       );
       getDb().query("UPDATE social_replies SET replied = 1 WHERE id = ?").run(id);
       return c.json({ ok: true, url: r.remoteUrl });
@@ -445,7 +449,7 @@ adminApi.post("/timeline/:id/reply", async (c) => {
 
   try {
     if (row.platform === "mastodon") {
-      const r = await replyMastodon(row.remote_id, text);
+      const r = await replyMastodonThread(row.remote_id, splitPostIntoThread(text, 480, "", false));
       return c.json({ ok: true, url: r.url });
     }
     if (row.platform === "bluesky") {
@@ -456,10 +460,10 @@ adminApi.post("/timeline/:id/reply", async (c) => {
       if (!parentCid) {
         return c.json({ error: "missing CID; cannot reply to this Bluesky post" }, 400);
       }
-      const r = await replyBluesky(
+      const r = await replyBlueskyThread(
         { uri: parentUri, cid: parentCid },
         { uri: rootUri, cid: rootCid },
-        text,
+        splitPostIntoThread(text, 280, "", false),
       );
       return c.json({ ok: true, url: r.remoteUrl });
     }

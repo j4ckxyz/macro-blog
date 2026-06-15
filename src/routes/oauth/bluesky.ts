@@ -48,6 +48,8 @@ export const BLUESKY_SCOPES = [
   "blob:image/*",
   `rpc:app.bsky.feed.getTimeline?aud=${BSKY_APPVIEW_AUD}`,
   `rpc:app.bsky.feed.getPostThread?aud=${BSKY_APPVIEW_AUD}`,
+  `rpc:app.bsky.feed.getPosts?aud=${BSKY_APPVIEW_AUD}`,
+  `rpc:app.bsky.notification.listNotifications?aud=${BSKY_APPVIEW_AUD}`,
 ].join(" ");
 
 export function blueskyScope(): string {

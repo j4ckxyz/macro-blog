@@ -118,11 +118,15 @@ CREATE TABLE IF NOT EXISTS social_replies (
   root_id TEXT,                        -- bluesky thread root uri
   root_cid TEXT,
   author TEXT,
+  author_handle TEXT,
   author_url TEXT,
   avatar TEXT,
   content TEXT,
   url TEXT,
   published TEXT,
+  reason TEXT,                         -- mention | reply | quote
+  media_json TEXT,                     -- JSON array of {url, alt, type}
+  embed_json TEXT,                     -- JSON link/quote embed
   replied INTEGER DEFAULT 0,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(platform, remote_id)
@@ -278,11 +282,15 @@ export interface SocialReplyRow {
   root_id: string | null;
   root_cid: string | null;
   author: string | null;
+  author_handle: string | null;
   author_url: string | null;
   avatar: string | null;
   content: string | null;
   url: string | null;
   published: string | null;
+  reason: string | null;
+  media_json: string | null;
+  embed_json: string | null;
   replied: number;
   created_at: string;
 }

@@ -8,10 +8,10 @@ import {
   serializeFrontMatter,
   CONTENT_DIR,
 } from "./content.ts";
-import { processPending } from "./syndication.ts";
+import { processPending, resetStuckSyndications } from "./syndication.ts";
 import { processQueue } from "./webmention-send.ts";
 import { scheduleFullBuild } from "./hugo.ts";
-import { pollReplies } from "./reply-poller.ts";
+import { pollReplies, pollMentions } from "./reply-poller.ts";
 import { refreshTimeline } from "./timeline.ts";
 
 let timer: ReturnType<typeof setInterval> | null = null;
@@ -51,13 +51,20 @@ export async function tick(db: Database = getDb()): Promise<void> {
 
 export function startScheduler(intervalMs = 60_000): void {
   if (timer) return;
+  // Recover any syndications stranded in 'sending' by a crash mid-dispatch.
+  const recovered = resetStuckSyndications();
+  if (recovered) console.log(`[scheduler] reset ${recovered} stuck syndication(s)`);
   timer = setInterval(() => {
     tick().catch((e) => console.error("[scheduler]", e));
   }, intervalMs);
-  // Reply polling every 15 minutes.
-  replyTimer = setInterval(() => {
+  // Reply / mention polling every 2 minutes (+ once shortly after boot) so
+  // comments and mentions show up quickly instead of feeling stale.
+  const pollAll = () => {
     pollReplies().catch((e) => console.error("[reply-poll]", e));
-  }, 15 * 60_000);
+    pollMentions().catch((e) => console.error("[mentions-poll]", e));
+  };
+  replyTimer = setInterval(pollAll, 2 * 60_000);
+  setTimeout(pollAll, 8000);
   // Following-timeline refresh every 5 minutes (+ once shortly after boot).
   timelineTimer = setInterval(() => {
     refreshTimeline().catch((e) => console.error("[timeline]", e));

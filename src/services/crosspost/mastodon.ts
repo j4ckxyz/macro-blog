@@ -1,6 +1,6 @@
 import { getConfig } from "../../lib/config.ts";
 import { getToken, getTokenExtra, setReauth } from "../../lib/tokens.ts";
-import type { CrosspostPayload, CrosspostResult } from "./types.ts";
+import type { CrosspostPayload, CrosspostResult, NormalizedMention } from "./types.ts";
 import type { NormalizedTimelineItem } from "../timeline.ts";
 import { splitPostIntoThread, formatChunkForMastodon } from "./thread.ts";
 
@@ -48,6 +48,37 @@ export function buildStatus(payload: CrosspostPayload): string {
   return status || payload.url;
 }
 
+/** Turn category names into Mastodon hashtag tokens (#CamelCase, no spaces). */
+export function categoriesToHashtags(categories: string[] | undefined): string[] {
+  if (!categories?.length) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of categories) {
+    const tag = String(raw).replace(/^#+/, "").replace(/\s+/g, "").trim();
+    if (!tag) continue;
+    const key = tag.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push("#" + tag);
+  }
+  return out;
+}
+
+/**
+ * Append category hashtags to the end of a status, skipping any already present
+ * in the text (case-insensitive) and only if they fit within `limit`.
+ */
+export function appendHashtags(text: string, categories: string[] | undefined, limit = 500): string {
+  const tags = categoriesToHashtags(categories);
+  if (!tags.length) return text;
+  const lower = text.toLowerCase();
+  const toAdd = tags.filter((t) => !lower.includes(t.toLowerCase()));
+  if (!toAdd.length) return text;
+  const suffix = "\n\n" + toAdd.join(" ");
+  if ([...(text + suffix)].length > limit) return text; // no room — skip silently
+  return text + suffix;
+}
+
 async function uploadMedia(photo: { url: string; alt?: string }): Promise<string> {
   const base = instanceUrl();
   const fileRes = await fetch(photo.url);
@@ -83,8 +114,15 @@ export async function crosspostMastodon(
   if (payload.type === "post") {
     const limit = 480;
     const bodyText = payload.markdown || payload.text;
-    const threadParts = splitPostIntoThread(bodyText, limit, payload.url, payload.linkBack);
+    const threadParts = splitPostIntoThread(bodyText, limit, payload.url, payload.linkBack === true);
     chunks = threadParts.map(formatChunkForMastodon);
+  }
+
+  // Append category hashtags to the final status (if they fit and aren't
+  // already in the text). Body #hashtags already render as tags on Mastodon.
+  if (payload.categories?.length && chunks.length) {
+    const last = chunks.length - 1;
+    chunks[last] = appendHashtags(chunks[last], payload.categories, 500);
   }
 
   let parentId: string | undefined = undefined;
@@ -178,27 +216,85 @@ export async function fetchMastodonHomeTimeline(limit = 40): Promise<NormalizedT
   });
 }
 
-/** Post a reply to a Mastodon status (used by the unified Mentions tab). */
-export async function replyMastodon(
+
+/**
+ * Fetch @-mentions (and reply notifications) from the Mastodon home account so
+ * they appear in the unified Mentions inbox — independent of whether they
+ * reply to a syndicated post.
+ */
+export async function fetchMastodonMentions(limit = 40): Promise<NormalizedMention[]> {
+  const base = instanceUrl();
+  const res = await fetch(`${base}/api/v1/notifications?types[]=mention&limit=${limit}`, {
+    headers: { Authorization: authHeader() },
+  });
+  if (!res.ok) {
+    checkAuth(res.status);
+    throw new Error(`mastodon mentions failed: ${res.status}`);
+  }
+  checkAuth(res.status);
+  const notifs = (await res.json()) as any[];
+  const out: NormalizedMention[] = [];
+  for (const n of notifs) {
+    const s = n.status;
+    if (!s) continue;
+    out.push({
+      platform: "mastodon",
+      remoteId: s.id,
+      reason: s.in_reply_to_id ? "reply" : "mention",
+      author: s.account?.display_name || s.account?.username || "",
+      authorHandle: s.account?.acct ? "@" + s.account.acct : "",
+      authorUrl: s.account?.url ?? null,
+      avatar: s.account?.avatar ?? null,
+      content: stripHtml(s.content || ""),
+      url: s.url || s.uri || null,
+      published: s.created_at || n.created_at || null,
+      media: (s.media_attachments || []).map((m: any) => ({
+        url: m.url,
+        alt: m.description || "",
+        type: m.type || "image",
+      })),
+      embed: s.card && s.card.url
+        ? { type: "link", uri: s.card.url, title: s.card.title || "", description: s.card.description || "", thumb: s.card.image || null }
+        : null,
+    });
+  }
+  return out;
+}
+
+/**
+ * Post a (possibly multi-part) reply thread to a Mastodon status. Each chunk
+ * replies to the previous one. Returns the first status's id/url.
+ */
+export async function replyMastodonThread(
   inReplyToId: string,
-  text: string,
+  texts: string[],
   fetchImpl: typeof fetch = fetch,
 ): Promise<{ id: string; url: string }> {
   const cfg = getConfig();
   const base = instanceUrl();
-  const res = await fetchImpl(`${base}/api/v1/statuses`, {
-    method: "POST",
-    headers: { Authorization: authHeader(), "content-type": "application/json" },
-    body: JSON.stringify({
-      status: text,
-      in_reply_to_id: inReplyToId,
-      visibility: "public",
-      language: cfg.site.language || "en",
-    }),
-  });
-  if (!res.ok) throw new Error(`mastodon reply failed: ${res.status} ${await res.text()}`);
-  const json = (await res.json()) as { id: string; url: string };
-  return { id: json.id, url: json.url };
+  let parentId = inReplyToId;
+  let firstId = "";
+  let firstUrl = "";
+  for (let i = 0; i < texts.length; i++) {
+    const res = await fetchImpl(`${base}/api/v1/statuses`, {
+      method: "POST",
+      headers: { Authorization: authHeader(), "content-type": "application/json" },
+      body: JSON.stringify({
+        status: texts[i],
+        in_reply_to_id: parentId,
+        visibility: "public",
+        language: cfg.site.language || "en",
+      }),
+    });
+    if (!res.ok) throw new Error(`mastodon reply failed at part ${i + 1}: ${res.status} ${await res.text()}`);
+    const json = (await res.json()) as { id: string; url: string };
+    parentId = json.id;
+    if (i === 0) {
+      firstId = json.id;
+      firstUrl = json.url;
+    }
+  }
+  return { id: firstId, url: firstUrl };
 }
 
 /** Fetch replies to a syndicated status via the context endpoint. */
