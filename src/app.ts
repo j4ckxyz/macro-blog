@@ -47,8 +47,10 @@ export function createApp(): Hono {
   app.route("/api", adminApi);
 
   // Admin UI served by the app itself (independent of the Hugo build).
+  // The wildcard lets client-side routes like /admin/timeline deep-link/refresh.
   app.get("/admin", serveAdmin);
   app.get("/admin/", serveAdmin);
+  app.get("/admin/*", serveAdmin);
 
   // Uploaded media served from the uploads directory.
   app.use(

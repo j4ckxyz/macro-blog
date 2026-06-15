@@ -133,7 +133,9 @@ bluesky.get("/connect", async (c) => {
   if (!handle) return c.json({ error: "missing handle" }, 400);
 
   try {
+    console.log(`[bluesky] connect: resolving handle @${handle}…`);
     const resolved = await resolveHandle(handle, cfg.crossposting.bluesky.pds_url);
+    console.log(`[bluesky] resolved @${handle} → ${resolved.did} (pds: ${resolved.pds})`);
     const keys = await generateDpopKeypair();
     const state = randomToken(16);
     const pkceVerifier = base64url(crypto.getRandomValues(new Uint8Array(32)));
@@ -228,6 +230,7 @@ bluesky.get("/callback", async (c) => {
     },
   });
 
+  console.log(`[bluesky] ✓ connected as @${flow.handle} (scopes: ${tok.scope ?? blueskyScope()})`);
   return c.html(`<p>Bluesky connected as ${flow.handle}. You can close this window.</p>`);
 });
 
@@ -236,6 +239,7 @@ export async function refreshBlueskyToken(): Promise<void> {
   const token = getToken("bluesky");
   const extra = getTokenExtra("bluesky");
   if (!token?.refresh_token) throw new Error("no bluesky refresh token");
+  console.log(`[bluesky] refreshing access token for @${extra.handle || "?"}…`);
   const keys: DpopKeypair = { privateJwk: extra.dpop_private_jwk, publicJwk: extra.dpop_public_jwk };
   const body = new URLSearchParams({
     grant_type: "refresh_token",
