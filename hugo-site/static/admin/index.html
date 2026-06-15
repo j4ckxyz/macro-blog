@@ -479,6 +479,7 @@
     const c=await (await api("/api/config")).json();
     cfg=c;
     const toast=h("div",{class:"toast"});
+    const buildStatusBox=h("div");
     const f=(label,el)=>h("div",{class:"field"},h("label",{},label),el);
     const inp=v=>h("input",{type:"text",value:v??""});
     const chk=v=>{const x=h("input",{type:"checkbox"});x.checked=!!v;return x;};
@@ -534,8 +535,20 @@
       h("h3",{class:"sub"},"Backup & build"),
       h("div",{style:"display:flex;gap:10px;flex-wrap:wrap"},
         h("button",{class:"btn secondary",onclick:async()=>{const r=await fetch(API+"/api/backup",{headers:{Authorization:"Bearer "+token}});const b=await r.blob();const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="macroblog-backup.tar.gz";a.click();}},"⬇ Download backup"),
-        h("button",{class:"btn secondary",onclick:async()=>{toast.textContent="Building…";const s=await (await api("/api/hugo/build",{method:"POST"})).json();toast.textContent=s.lastSuccess?"✓ Built in "+s.durationMs+"ms":"Build failed";}},"Rebuild site")),
+        h("button",{class:"btn secondary",onclick:async()=>{toast.textContent="Building…";const s=await (await api("/api/hugo/build",{method:"POST"})).json();renderBuildStatus(s);toast.textContent=s.lastSuccess?"✓ Built in "+s.durationMs+"ms":"Build FAILED — see log below";}},"Rebuild site")),
+      buildStatusBox,
       toast);
+
+    // Show the latest build status (and the error log if the last build failed).
+    api("/api/hugo/status").then(r=>r.json()).then(renderBuildStatus).catch(()=>{});
+    function renderBuildStatus(s){
+      buildStatusBox.innerHTML="";
+      if(!s||(s.lastSuccess&&!s.log)) return;
+      if(s.lastSuccess){ buildStatusBox.append(h("div",{style:"color:#2a8a4a;font-size:13px;margin-top:8px"},"✓ Last build OK ("+(s.durationMs||0)+"ms)")); return; }
+      buildStatusBox.append(
+        h("div",{class:"banner"},"⚠ The last site build FAILED — your public site won't update until this is fixed. Hugo output:"),
+        h("pre",{style:"white-space:pre-wrap;background:#0d0f12;color:#e6e6e6;padding:12px;border-radius:8px;font-size:12px;overflow:auto;max-height:300px"}, s.log||"(no output captured)"));
+    }
   }
   function passwordChanger(){
     const pw=h("input",{type:"password",placeholder:"New password",style:"max-width:280px;border:1px solid #dfe2e6;border-radius:9px;padding:10px 12px;font-size:15px"});
