@@ -70,6 +70,18 @@ export function migrate(conn: Database): void {
     conn.exec("ALTER TABLE timeline ADD COLUMN embed_json TEXT;");
   } catch (e) {}
 
+  // social_replies: richer mention data (media, quotes, reason, handle).
+  for (const col of [
+    "author_handle TEXT",
+    "reason TEXT",
+    "media_json TEXT",
+    "embed_json TEXT",
+  ]) {
+    try {
+      conn.exec(`ALTER TABLE social_replies ADD COLUMN ${col};`);
+    } catch (e) {}
+  }
+
   // Backfill content and categories_json for existing posts if NULL
   try {
     const nullPosts = conn.query("SELECT id, file_path, post_type FROM posts WHERE content IS NULL").all() as any[];

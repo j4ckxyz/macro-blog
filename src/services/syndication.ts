@@ -41,6 +41,9 @@ export function queueSyndication(
  * cross-posts go out immediately instead of waiting for the 60s scheduler).
  */
 export function dispatchSoon(): void {
+  // Tests drive dispatch explicitly (and have no real tokens), so skip the
+  // automatic microtask there to keep queued state observable and deterministic.
+  if (process.env.MACROBLOG_NO_DISPATCH === "1") return;
   queueMicrotask(() => {
     processPending().catch((e) => console.error("[syndication] dispatch error:", (e as Error).message));
   });
@@ -82,6 +85,9 @@ export async function buildPayload(post: PostRow): Promise<CrosspostPayload> {
     : [];
 
   const linkBack = frontMatter.link_back !== false;
+  const categories = Array.isArray(frontMatter.categories)
+    ? frontMatter.categories.map((c: any) => String(c)).filter(Boolean)
+    : [];
 
   return {
     text: markdownToText(body),
@@ -93,6 +99,7 @@ export async function buildPayload(post: PostRow): Promise<CrosspostPayload> {
     inReplyTo: frontMatter.reply_to_url || undefined,
     linkBack,
     lang: frontMatter.lang || undefined,
+    categories,
   };
 }
 
@@ -119,26 +126,48 @@ export async function dispatchOne(syn: SyndicationRow, db: Database = getDb()): 
   }
 }
 
-/** Process all pending syndications for published posts. */
+/**
+ * Process all pending syndications for published posts.
+ *
+ * Rows are *claimed* atomically (pending → sending) before any network call, so
+ * two concurrent callers — the post-publish `dispatchSoon()` and the 60s
+ * scheduler tick — can never both grab the same row and cross-post it twice.
+ * bun:sqlite runs synchronously, so the claiming UPDATE…RETURNING completes
+ * before any `await` yields the event loop.
+ */
 export async function processPending(db: Database = getDb()): Promise<number> {
-  const rows = db
+  const claimed = db
     .query(
-      `SELECT s.* FROM syndications s
-       JOIN posts p ON p.id = s.post_id
-       WHERE s.status = 'pending' AND p.status = 'published'`,
+      `UPDATE syndications SET status = 'sending'
+       WHERE status = 'pending'
+         AND post_id IN (SELECT id FROM posts WHERE status = 'published')
+       RETURNING *`,
     )
     .all() as SyndicationRow[];
-  for (const row of rows) {
+  for (const row of claimed) {
     await dispatchOne(row, db);
   }
-  return rows.length;
+  return claimed.length;
+}
+
+/**
+ * Reset rows stuck in the transient 'sending' state back to 'pending' — used on
+ * startup so a crash mid-dispatch doesn't strand a syndication forever.
+ */
+export function resetStuckSyndications(db: Database = getDb()): number {
+  const res = db
+    .query("UPDATE syndications SET status = 'pending' WHERE status = 'sending'")
+    .run();
+  return res.changes ?? 0;
 }
 
 export async function retrySyndication(id: number, db: Database = getDb()): Promise<boolean> {
-  const row = db.query("SELECT * FROM syndications WHERE id = ?").get(id) as SyndicationRow | null;
-  if (!row) return false;
-  db.query("UPDATE syndications SET status = 'pending', error = NULL WHERE id = ?").run(id);
-  await dispatchOne({ ...row, status: "pending" }, db);
+  // Claim atomically so a concurrent scheduler tick can't also pick this up.
+  const claimed = db
+    .query("UPDATE syndications SET status = 'sending', error = NULL WHERE id = ? AND status != 'sending' RETURNING *")
+    .all(id) as SyndicationRow[];
+  if (!claimed.length) return false;
+  await dispatchOne(claimed[0], db);
   return true;
 }
 

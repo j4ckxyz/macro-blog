@@ -2,7 +2,7 @@ import { getToken, getTokenExtra, saveToken, setReauth } from "../../lib/tokens.
 import { getConfig } from "../../lib/config.ts";
 import { dpopFetch, type DpopKeypair } from "../../lib/dpop.ts";
 import { refreshBlueskyToken } from "../../routes/oauth/bluesky.ts";
-import type { CrosspostPayload, CrosspostResult } from "./types.ts";
+import type { CrosspostPayload, CrosspostResult, NormalizedMention } from "./types.ts";
 import type { NormalizedTimelineItem } from "../timeline.ts";
 import { splitPostIntoThread } from "./thread.ts";
 
@@ -102,6 +102,46 @@ export function buildFacets(text: string): any[] {
   return facets;
 }
 
+const HASHTAG_RE = /(^|[\s(])#([\p{L}\p{N}_]*[\p{L}\p{N}_-]+)/gu;
+
+/** Build richtext tag facets (byte-indexed) for #hashtags in the text. */
+export function buildTagFacets(text: string): any[] {
+  const encoder = new TextEncoder();
+  const facets: any[] = [];
+  let m: RegExpExecArray | null;
+  HASHTAG_RE.lastIndex = 0;
+  while ((m = HASHTAG_RE.exec(text)) !== null) {
+    const lead = m[1] ?? "";
+    const tag = m[2];
+    if (!tag || /^\d+$/.test(tag)) continue; // skip purely-numeric (#1)
+    const hashIndex = m.index + lead.length;
+    const byteStart = encoder.encode(text.slice(0, hashIndex)).length;
+    const byteEnd = byteStart + encoder.encode("#" + tag).length;
+    facets.push({
+      index: { byteStart, byteEnd },
+      features: [{ $type: "app.bsky.richtext.facet#tag", tag }],
+    });
+  }
+  return facets;
+}
+
+/** Sanitise category names into Bluesky tag strings (no leading #, max 8). */
+export function categoriesToTags(categories: string[] | undefined): string[] {
+  if (!categories?.length) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of categories) {
+    const tag = String(raw).replace(/^#+/, "").replace(/\s+/g, "").trim();
+    if (!tag) continue;
+    const key = tag.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(tag);
+    if (out.length >= 8) break; // Bluesky caps a post at 8 tags.
+  }
+  return out;
+}
+
 function truncateGraphemes(text: string, max: number): string {
   const chars = Array.from(text);
   if (chars.length <= max) return text;
@@ -161,6 +201,14 @@ export function markdownToRichText(md: string): { text: string; facets: any[] } 
     if (!overlap) {
       facets.push(raw);
     }
+  }
+
+  // Hashtags written in the body become proper Bluesky tag facets (skipping any
+  // that fall inside an existing link facet, e.g. a URL fragment like #section).
+  for (const tagFacet of buildTagFacets(resultText)) {
+    const { byteStart, byteEnd } = tagFacet.index;
+    const overlap = facets.some(f => (byteStart >= f.index.byteStart && byteStart < f.index.byteEnd) || (byteEnd > f.index.byteStart && byteEnd <= f.index.byteEnd));
+    if (!overlap) facets.push(tagFacet);
   }
 
   facets.sort((a, b) => a.index.byteStart - b.index.byteStart);
@@ -271,6 +319,11 @@ export async function buildPostRecord(
     createdAt: new Date().toISOString(),
     langs: [lang],
   };
+
+  // Categories become hidden Bluesky tags: indexed for search/feeds but not
+  // shown in the post text (the post's #hashtags are handled as facets above).
+  const hiddenTags = categoriesToTags(payload.categories);
+  if (hiddenTags.length) record.tags = hiddenTags;
 
   const linkBack = payload.linkBack === true;
 
@@ -445,7 +498,7 @@ export async function crosspostBluesky(payload: CrosspostPayload): Promise<Cross
   if (payload.type === "post") {
     const limit = 280;
     const bodyText = payload.markdown || payload.text;
-    chunks = splitPostIntoThread(bodyText, limit, payload.url, payload.linkBack);
+    chunks = splitPostIntoThread(bodyText, limit, payload.url, payload.linkBack === true);
   }
 
   if (chunks.length <= 1) {
@@ -475,6 +528,7 @@ export async function crosspostBluesky(payload: CrosspostPayload): Promise<Cross
       text: chunk,
       markdown: chunk,
       photos: i === 0 ? payload.photos : [],
+      categories: i === 0 ? payload.categories : [],
       linkBack: false,
     };
 
@@ -533,6 +587,46 @@ export async function replyBluesky(
   const rkey = (result.uri as string).split("/").pop();
   const handle = getTokenExtra("bluesky").handle || session.did;
   return { remoteId: result.uri, remoteUrl: `https://bsky.app/profile/${handle}/post/${rkey}` };
+}
+
+/**
+ * Post a (possibly multi-part) reply thread to a Bluesky post. Each chunk
+ * replies to the previous one, keeping the same thread root. Returns the first
+ * post's id/url. Used by the Mentions inbox for longer, auto-chunked replies.
+ */
+export async function replyBlueskyThread(
+  parent: { uri: string; cid: string },
+  root: { uri: string; cid: string },
+  texts: string[],
+): Promise<{ remoteId: string; remoteUrl: string }> {
+  await ensureFreshToken();
+  const session = loadSession();
+  const handle = getTokenExtra("bluesky").handle || session.did;
+  let firstUri = "";
+  let firstUrl = "";
+  let curParent = parent;
+  for (let i = 0; i < texts.length; i++) {
+    const { text, facets } = markdownToRichText(texts[i]);
+    const record: any = {
+      $type: "app.bsky.feed.post",
+      text,
+      facets,
+      createdAt: new Date().toISOString(),
+      reply: { root, parent: curParent },
+    };
+    const result = await xrpc(session, "com.atproto.repo.createRecord", "POST", {
+      repo: session.did,
+      collection: "app.bsky.feed.post",
+      record,
+    });
+    const rkey = (result.uri as string).split("/").pop();
+    if (i === 0) {
+      firstUri = result.uri;
+      firstUrl = `https://bsky.app/profile/${handle}/post/${rkey}`;
+    }
+    curParent = { uri: result.uri, cid: result.cid };
+  }
+  return { remoteId: firstUri, remoteUrl: firstUrl };
 }
 
 /** Fetch the authenticated user's following feed (home timeline). */
@@ -623,6 +717,101 @@ export async function fetchBlueskyTimeline(limit = 50): Promise<NormalizedTimeli
     });
   }
   return items;
+}
+
+/** Normalize a hydrated Bluesky post view into inline media + a link/quote embed. */
+function normalizeBlueskyPostView(p: any): { media: { url: string; alt?: string; type?: string }[]; embed: any | null } {
+  const rawImages = p.embed?.images ?? p.embed?.media?.images ?? [];
+  const media = rawImages.map((im: any) => ({ url: im.fullsize || im.thumb || "", alt: im.alt || "", type: "image" }));
+  if (p.embed?.$type?.includes("video") && (p.embed?.playlist || p.embed?.thumbnail)) {
+    media.push({ url: p.embed.thumbnail || p.embed.playlist, alt: "", type: "video" });
+  }
+  let embed: any = null;
+  const embedObj = p.embed;
+  if (embedObj) {
+    const type = embedObj.$type;
+    if (type === "app.bsky.embed.external#view" && embedObj.external) {
+      embed = {
+        type: "link",
+        uri: embedObj.external.uri,
+        title: embedObj.external.title || "",
+        description: embedObj.external.description || "",
+        thumb: embedObj.external.thumb || null,
+      };
+    } else if (type === "app.bsky.embed.record#view" || type === "app.bsky.embed.recordWithMedia#view") {
+      const recordView = type === "app.bsky.embed.recordWithMedia#view" ? embedObj.record?.record : embedObj.record;
+      if (recordView && recordView.$type === "app.bsky.embed.record#viewRecord") {
+        const recHandle = recordView.author?.handle;
+        const recRkey = (recordView.uri as string).split("/").pop();
+        embed = {
+          type: "quote",
+          uri: recordView.uri,
+          author: recordView.author?.displayName || recHandle || "",
+          authorHandle: recHandle ? "@" + recHandle : "",
+          avatar: recordView.author?.avatar || "",
+          content: recordView.value?.text || "",
+          createdAt: recordView.value?.createdAt || recordView.indexedAt || "",
+          url: recHandle ? `https://bsky.app/profile/${recHandle}/post/${recRkey}` : "",
+        };
+      }
+    }
+  }
+  return { media, embed };
+}
+
+/**
+ * Fetch @-mentions, replies and quotes from the account's notifications so they
+ * show in the unified Mentions inbox with inline media and quoted posts.
+ */
+export async function fetchBlueskyMentions(limit = 40): Promise<NormalizedMention[]> {
+  await ensureFreshToken();
+  const session = loadSession();
+  const result = await xrpc(session, "app.bsky.notification.listNotifications", "GET", undefined, {
+    limit: String(limit),
+  });
+  const notifs = (result?.notifications ?? []).filter((n: any) =>
+    ["mention", "reply", "quote"].includes(n.reason),
+  );
+  if (!notifs.length) return [];
+
+  // Hydrate the notifying posts (getPosts handles up to 25 URIs) so we get
+  // media/quote views and author handles/avatars, not just the raw record.
+  const uris = [...new Set(notifs.map((n: any) => n.uri as string))].slice(0, 25);
+  const views: Record<string, any> = {};
+  try {
+    const got = await xrpc(session, "app.bsky.feed.getPosts", "GET", undefined, { uris: uris.join(",") });
+    for (const p of got?.posts ?? []) views[p.uri] = p;
+  } catch (e) {
+    console.warn("[bluesky] getPosts hydration failed:", (e as Error).message);
+  }
+
+  const out: NormalizedMention[] = [];
+  for (const n of notifs) {
+    const view = views[n.uri];
+    const author = view?.author ?? n.author;
+    const handle = author?.handle;
+    const rkey = (n.uri as string).split("/").pop();
+    const record = view?.record ?? n.record ?? {};
+    const { media, embed } = view ? normalizeBlueskyPostView(view) : { media: [], embed: null };
+    out.push({
+      platform: "bluesky",
+      remoteId: n.uri,
+      remoteCid: n.cid,
+      rootId: record.reply?.root?.uri || n.uri,
+      rootCid: record.reply?.root?.cid || n.cid,
+      reason: n.reason,
+      author: author?.displayName || handle || "",
+      authorHandle: handle ? "@" + handle : "",
+      authorUrl: handle ? `https://bsky.app/profile/${handle}` : null,
+      avatar: author?.avatar ?? null,
+      content: record.text || "",
+      url: handle ? `https://bsky.app/profile/${handle}/post/${rkey}` : null,
+      published: record.createdAt || n.indexedAt || null,
+      media,
+      embed,
+    });
+  }
+  return out;
 }
 
 /** Fetch replies to a syndicated post via getPostThread, plus the thread root. */

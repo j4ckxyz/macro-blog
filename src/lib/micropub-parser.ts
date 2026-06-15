@@ -10,6 +10,8 @@ export type PostType = "post" | "article" | "photo" | "reply" | "bookmark" | "po
 export interface Photo {
   url: string;
   alt?: string;
+  width?: number;
+  height?: number;
 }
 
 export interface MicropubCreate {

@@ -185,6 +185,12 @@
     .tl-item{display:flex;gap:12px;padding:14px 10px;border-bottom:1px solid var(--line);color:var(--text);border-radius:10px;margin-bottom:8px;transition: background .15s;}
     .tl-item:hover{background:var(--hover)}
     .tl-item.tl-selected{background:var(--hover);outline:2px solid var(--blue);outline-offset:-2px;}
+    .mention-reason{font-size:12px;color:var(--muted);background:var(--field);border-radius:20px;padding:1px 8px;margin-left:2px}
+    .empty-state{text-align:center;padding:48px 20px;color:var(--muted)}
+    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;display:flex;align-items:center;justify-content:center;padding:20px}
+    .modal-box{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;max-width:520px;width:100%;max-height:85vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+    .bulkbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--blue);border-radius:10px;padding:8px 12px;margin-bottom:12px}
+    .selectcb{width:17px;height:17px;flex:0 0 auto;cursor:pointer}
     .tl-item.is-reply{border-left: 3px solid var(--blue); padding-left: 14px; background: rgba(58,111,214,0.03); margin-left: 10px;}
     .tl-avatar{width:44px;height:44px;border-radius:50%;object-fit:cover;background:var(--field);flex:0 0 44px}
     .tl-body{min-width:0;flex:1}
@@ -304,6 +310,43 @@
       clearTimeout(timeout);
       timeout = setTimeout(() => func.apply(this, args), wait);
     };
+  }
+
+  /* Lightweight modal: title + body node + confirm/cancel. onConfirm may be async. */
+  function showModal(title, bodyNode, confirmLabel, onConfirm, opts={}){
+    const overlay=h("div",{class:"modal-overlay"});
+    const close=()=>overlay.remove();
+    const confirmBtn=h("button",{class:"btn "+(opts.danger?"secondary":"primary"),style:opts.danger?"color:#d33":"",onclick:async()=>{
+      confirmBtn.disabled=true;confirmBtn.textContent="Working…";
+      try{ await onConfirm(); }finally{ close(); }
+    }},confirmLabel||"Confirm");
+    const box=h("div",{class:"modal-box"},
+      h("h3",{style:"margin:0 0 10px;font-size:18px"},title),
+      bodyNode,
+      h("div",{style:"display:flex;gap:8px;justify-content:flex-end;margin-top:18px"},
+        h("button",{class:"btn secondary",onclick:close},"Cancel"), confirmBtn));
+    overlay.append(box);
+    overlay.addEventListener("click",e=>{if(e.target===overlay)close();});
+    document.body.append(overlay);
+    return close;
+  }
+
+  /* Build a node listing crosspost copies of posts so the user can delete them manually. */
+  function crosspostLinksNode(posts){
+    const links=[];
+    for(const p of posts){
+      for(const s of (p.syndications||[])){
+        if(s.status==="success"&&s.remote_url){
+          links.push(h("li",{style:"margin:3px 0"},
+            h("span",{html:s.platform==="bluesky"?blueskySvg:mastodonSvg("d"+p.id+s.platform)}),
+            " ",h("a",{href:s.remote_url,target:"_blank",rel:"noopener"},s.remote_url)));
+        }
+      }
+    }
+    if(!links.length) return null;
+    return h("div",{style:"margin-top:10px;padding:10px 12px;background:var(--field);border-radius:8px"},
+      h("div",{style:"font-size:13px;color:var(--muted);margin-bottom:6px"},"This was cross-posted. Deleting here won't remove these copies — open them to delete manually:"),
+      h("ul",{style:"margin:0;padding-left:4px;list-style:none;font-size:13px;word-break:break-all"},...links));
   }
 
   function openLightbox(mediaItems, currentIndex) {
@@ -1040,9 +1083,39 @@
     const filterRow = h("div",{style:"display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center;"},
       statusSel, typeSel, folderSel, searchInput
     );
-    
-    const list=h("div"); 
-    view.append(filterRow, list);
+
+    // Multi-select state (by slug) + bulk action bar.
+    let currentPosts=[];
+    const selected=new Set();
+    const selectAllCb=h("input",{type:"checkbox",class:"selectcb",onchange:()=>{
+      if(selectAllCb.checked) currentPosts.forEach(p=>selected.add(p.slug));
+      else selected.clear();
+      load();
+    }});
+    const bulkCount=h("span",{style:"font-weight:600"});
+    const bulkBar=h("div",{class:"bulkbar",style:"display:none"},
+      selectAllCb, bulkCount,
+      h("button",{class:"btn secondary",style:"color:#d33;margin-left:auto;padding:6px 12px",onclick:()=>{
+        const posts=currentPosts.filter(p=>selected.has(p.slug));
+        if(!posts.length) return;
+        const body=h("div",{},
+          h("p",{style:"margin:0 0 4px"},"Delete "+posts.length+" post"+(posts.length>1?"s":"")+"? This removes them from your site."),
+          crosspostLinksNode(posts));
+        showModal("Delete "+posts.length+" posts", body, "Delete "+posts.length, async()=>{
+          for(const p of posts){ await api("/api/posts/"+p.slug,{method:"DELETE"}); }
+          selected.clear(); load();
+        }, {danger:true});
+      }},"🗑 Delete selected")
+    );
+
+    const list=h("div");
+    view.append(filterRow, bulkBar, list);
+
+    function refreshBulkBar(){
+      bulkBar.style.display = selected.size ? "flex" : "none";
+      bulkCount.textContent = selected.size + " selected";
+      selectAllCb.checked = currentPosts.length>0 && currentPosts.every(p=>selected.has(p.slug));
+    }
     
     const loadFolders = async () => {
       folderSel.innerHTML = "";
@@ -1068,9 +1141,13 @@
       if (q) queryStr += "&q=" + encodeURIComponent(q);
       
       const {posts}=await (await api("/api/posts"+queryStr)).json();
+      currentPosts=posts;
+      // Drop selections that are no longer in view.
+      for(const slug of [...selected]) if(!posts.some(p=>p.slug===slug)) selected.delete(slug);
       list.innerHTML="";
+      refreshBulkBar();
       if(!posts.length){list.append(h("p",{style:"color:var(--muted)"},"No posts."));return;}
-      
+
       for(const p of posts){
         const socialSpan = h("span",{style:"display:inline-flex;gap:6px;align-items:center;margin-left:8px;"});
         if (p.syndications) {
@@ -1100,12 +1177,21 @@
           navigate("composer");
         }},"Edit");
 
-        const deleteBtn = h("button",{class:"btn secondary",style:"padding:6px 12px;color:#d33",onclick:async()=>{
-          if(confirm("Delete this post?")){
+        const deleteBtn = h("button",{class:"btn secondary",style:"padding:6px 12px;color:#d33",onclick:()=>{
+          const body=h("div",{},
+            h("p",{style:"margin:0 0 4px"},"Delete this post? It will be removed from your site."),
+            crosspostLinksNode([p]));
+          showModal("Delete post", body, "Delete", async()=>{
             await api("/api/posts/"+p.slug,{method:"DELETE"});
             load();
-          }
+          }, {danger:true});
         }},"Delete");
+
+        const rowCb=h("input",{type:"checkbox",class:"selectcb",onchange:()=>{
+          if(rowCb.checked) selected.add(p.slug); else selected.delete(p.slug);
+          refreshBulkBar();
+        }});
+        rowCb.checked=selected.has(p.slug);
 
         const contentText = p.content || "";
         const snippet = contentText.length > 120 ? contentText.slice(0, 120) + "…" : contentText;
@@ -1125,7 +1211,8 @@
           ...cats.map(c => h("span",{class:"tag",style:"background:var(--tag-bg);color:var(--muted);"}, "#" + c))
         );
 
-        list.append(h("div",{class:"row",style:"align-items:flex-start;padding:16px 8px;border-bottom:1px solid var(--line);display:flex;gap:16px;"},
+        list.append(h("div",{class:"row",style:"align-items:flex-start;padding:16px 8px;border-bottom:1px solid var(--line);display:flex;gap:12px;"},
+          h("div",{style:"padding-top:3px"}, rowCb),
           h("div",{style:"flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;"},
             h("div",{style:"display:flex;align-items:center;gap:6px;flex-wrap:wrap;"},
               statusDot,
@@ -1506,36 +1593,114 @@
       status);
   }
 
-  /* ---------------- mentions ---------------- */
+  /* ---------------- mentions (unified social inbox) ---------------- */
+  function mentionMedia(mediaArr){
+    if(!mediaArr||!mediaArr.length) return null;
+    const total=mediaArr.length;
+    const grid=h("div",{class:"tl-media grid-"+Math.min(4,total)});
+    mediaArr.slice(0,4).forEach((mm,idx)=>{
+      let el;
+      if((mm.type==="video")||/\.(mp4|webm|mov|ogg)$/i.test(mm.url||"")){
+        el=h("video",{src:mm.url,controls:"true",style:"width:100%;height:100%;object-fit:cover;display:block"});
+      }else{
+        el=h("img",{src:mm.url,alt:mm.alt||"",loading:"lazy",onclick:e=>{e.preventDefault();e.stopPropagation();openLightbox(mediaArr,idx);}});
+      }
+      const cell=h("div",{style:"position:relative;width:100%;height:100%;overflow:hidden;"},el);
+      if(idx===3&&total>4) cell.append(h("div",{class:"tl-media-overlay"},"+"+(total-3)));
+      grid.append(cell);
+    });
+    return grid;
+  }
+  function mentionEmbed(embed){
+    if(!embed) return null;
+    if(embed.type==="link"){
+      let domain=""; try{domain=new URL(embed.uri).hostname.replace("www.","");}catch{domain=embed.uri||"";}
+      return h("a",{class:"tl-embed-link",href:embed.uri,target:"_blank",rel:"noopener"},
+        embed.thumb?h("img",{class:"tl-embed-link-thumb",src:embed.thumb,alt:""}):null,
+        h("div",{class:"tl-embed-link-content"},
+          h("div",{class:"tl-embed-link-title"},embed.title||"Link"),
+          embed.description?h("div",{class:"tl-embed-link-desc"},embed.description):null,
+          h("div",{class:"tl-embed-link-domain"},domain)));
+    }
+    if(embed.type==="quote"){
+      return h("a",{class:"tl-embed-quote",href:embed.url||"#",target:"_blank",rel:"noopener"},
+        h("div",{class:"tl-embed-quote-header"},
+          embed.avatar?h("img",{class:"tl-embed-quote-avatar",src:embed.avatar,alt:""}):null,
+          h("span",{class:"tl-embed-quote-author"},embed.author||""),
+          h("span",{class:"tl-embed-quote-handle"},embed.authorHandle||"")),
+        h("div",{class:"tl-embed-quote-text"},embed.content||""));
+    }
+    return null;
+  }
+  const REASON_LABEL={mention:"mentioned you",reply:"replied",quote:"quoted you"};
+
   async function mentionsView(view){
     const reload=()=>{view.innerHTML="";mentionsView(view);};
-    view.append(h("div",{class:"viewhead"},
-      h("h2",{class:"section"},"Mentions"),
-      h("button",{class:"btn secondary",style:"padding:7px 14px",onclick:async()=>{await api("/api/mentions/poll",{method:"POST"});reload();}},"↻ Poll replies")));
+    const pollBtn=h("button",{class:"btn secondary",style:"padding:7px 14px",onclick:async()=>{
+      pollBtn.textContent="Polling…";pollBtn.disabled=true;
+      await api("/api/mentions/poll",{method:"POST"});reload();
+    }},"↻ Refresh");
+    view.append(h("div",{class:"viewhead"},h("h2",{class:"section"},"Mentions"),pollBtn));
     const [bsS,maS]=await Promise.all([api("/api/oauth/bluesky").then(r=>r.json()),api("/api/oauth/mastodon").then(r=>r.json())]);
     const bb=reauthBanner("bluesky",bsS); if(bb)view.append(bb);
     const mb=reauthBanner("mastodon",maS); if(mb)view.append(mb);
     const {webmentions,social}=await (await api("/api/mentions")).json();
-    const icon={bluesky:"🦋",mastodon:"🐘"};
-    if(social.length) view.append(h("h3",{class:"sub"},"Replies"));
-    for(const s of social){
-      const box=h("textarea",{class:"replybox",rows:"2",placeholder:"Reply…"});
-      const st=h("span",{style:"font-size:13px;margin-left:8px;color:#2a8a4a"});
-      view.append(h("div",{class:"card"},
-        h("div",{}, (icon[s.platform]||"")+" ", h("a",{href:s.url||"#",target:"_blank"},s.author||"someone"), s.replied?h("span",{style:"color:var(--muted);font-size:12px;margin-left:8px"},"(replied)"):null),
-        h("div",{style:"margin:6px 0;color:var(--text)",html:formatPostText(s.content, s.platform)}), box,
-        h("div",{},h("button",{class:"btn primary",style:"padding:7px 14px;margin-top:6px",onclick:async()=>{const r=await api("/api/mentions/"+s.id+"/reply",{method:"POST",json:{text:box.value}});st.textContent=r.ok?"✓ sent":"✗ "+(await r.json()).error;}},"Reply"),st)));
+
+    const anyConn=bsS.connected||maS.connected;
+    if(!social.length){
+      view.append(h("div",{class:"empty-state"},
+        h("div",{style:"font-size:34px;margin-bottom:6px"},"@"),
+        h("p",{style:"color:var(--muted);margin:0"}, anyConn
+          ? "No mentions yet. When someone @-mentions, replies to, or quotes you on Bluesky or Mastodon, it shows up here."
+          : "Connect Bluesky or Mastodon in Settings to pull in your mentions.")));
     }
-    view.append(h("h3",{class:"sub"},"Webmentions"));
-    if(!webmentions.length) view.append(h("p",{style:"color:var(--muted)"},"None yet."));
-    for(const w of webmentions){
-      view.append(h("div",{class:"card"},
-        h("div",{},h("b",{},w.author_name||w.author_url||"Anon")," — "+w.type),
-        h("div",{style:"color:var(--muted);margin:4px 0"},w.content||w.source),
-        w.status==="pending"?h("div",{},
-          h("button",{class:"btn secondary",style:"padding:6px 12px;color:#2a8a4a;margin-right:8px",onclick:async()=>{await api("/api/webmentions/"+w.id,{method:"PATCH",json:{status:"approved"}});reload();}},"Approve"),
-          h("button",{class:"btn secondary",style:"padding:6px 12px;color:#d33",onclick:async()=>{await api("/api/webmentions/"+w.id,{method:"PATCH",json:{status:"rejected"}});reload();}},"Reject"))
-        :h("span",{style:"color:var(--muted)"},w.status)));
+    for(const s of social){
+      const media=s.media_json?mentionMedia(JSON.parse(s.media_json)):null;
+      const embed=s.embed_json?mentionEmbed(JSON.parse(s.embed_json)):null;
+      const handle=s.author_handle||"";
+      const limit=s.platform==="bluesky"?280:480;
+      const box=h("textarea",{class:"replybox",rows:"2",placeholder:"Write a reply"+(handle?" to "+handle:"")+"… (long replies auto-thread)"});
+      const hint=h("span",{class:"count",style:"font-size:12px"});
+      box.addEventListener("input",()=>{const n=getPlainTextLength(box.value);if(n>limit){const parts=estimateThreadParts(box.value,limit);hint.textContent=n+" · "+parts+" posts";}else{hint.textContent=n?n+" chars":"";}});
+      const st=h("span",{style:"font-size:13px;margin-left:8px"});
+      const sendBtn=h("button",{class:"btn primary",style:"padding:7px 14px",onclick:async()=>{
+        if(!box.value.trim()){return;}
+        sendBtn.disabled=true;st.style.color="var(--muted)";st.textContent="Sending…";
+        const r=await api("/api/mentions/"+s.id+"/reply",{method:"POST",json:{text:box.value}});
+        if(r.ok){st.style.color="#2a8a4a";st.textContent="✓ sent";box.value="";hint.textContent="";}
+        else{st.style.color="#d33";st.textContent="✗ "+((await r.json()).error||"failed");}
+        sendBtn.disabled=false;
+      }},"Reply");
+      view.append(h("div",{class:"tl-item"},
+        h("a",{href:s.url||"#",target:"_blank",rel:"noopener"},h("img",{class:"tl-avatar",src:s.avatar||"",alt:"",onerror:"this.style.visibility='hidden'"})),
+        h("div",{class:"tl-body"},
+          h("div",{class:"tl-meta"},
+            h("a",{class:"tl-author",href:s.author_url||s.url||"#",target:"_blank",rel:"noopener",style:"color:var(--text)"},s.author||"someone"),
+            handle?h("span",{class:"tl-handle"},handle):null,
+            h("span",{class:"mention-reason"},REASON_LABEL[s.reason]||"mentioned you"),
+            s.published?h("span",{class:"tl-time"},"· "+timeAgo(s.published)):null,
+            h("span",{class:"tl-badge",html:s.platform==="bluesky"?blueskySvg:mastodonSvg("m"+s.id)}),
+            s.replied?h("span",{style:"color:var(--blue);font-size:12px;margin-left:6px"},"✓ replied"):null),
+          h("div",{class:"tl-text",html:formatPostText(s.content||"", s.platform)}),
+          media, embed,
+          h("div",{style:"margin-top:8px"}, box,
+            h("div",{style:"display:flex;align-items:center;gap:10px;margin-top:6px"}, sendBtn, hint, st))
+        )));
+    }
+
+    // Webmentions kept as a secondary section (incoming from other blogs).
+    const pending=webmentions.filter(w=>w.status==="pending");
+    if(webmentions.length){
+      view.append(h("h3",{class:"sub"},"Webmentions"+(pending.length?" ("+pending.length+" pending)":"")));
+      for(const w of webmentions){
+        view.append(h("div",{class:"card"},
+          h("div",{},h("b",{},w.author_name||w.author_url||"Anon")," — "+w.type),
+          h("div",{style:"color:var(--muted);margin:4px 0"},w.content||w.source),
+          w.status==="pending"?h("div",{},
+            h("button",{class:"btn secondary",style:"padding:6px 12px;color:#2a8a4a;margin-right:8px",onclick:async()=>{await api("/api/webmentions/"+w.id,{method:"PATCH",json:{status:"approved"}});reload();}},"Approve"),
+            h("button",{class:"btn secondary",style:"padding:6px 12px;color:#d33",onclick:async()=>{await api("/api/webmentions/"+w.id,{method:"PATCH",json:{status:"rejected"}});reload();}},"Reject"))
+          :h("span",{style:"color:var(--muted)"},w.status)));
+      }
     }
   }
 

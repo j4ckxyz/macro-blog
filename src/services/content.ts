@@ -446,7 +446,8 @@ export async function addSyndicationUrl(post: PostRow, url: string): Promise<voi
   const content = await readPostFile(post);
   const parsed = parseFrontMatter(content);
   const fm = normaliseFm(parsed.frontMatter, post.post_type as PostType);
-  fm.syndication = [...(fm.syndication ?? []), url];
+  // Dedupe defensively so a re-dispatch never doubles the syndication icons.
+  fm.syndication = [...new Set([...(fm.syndication ?? []), url])];
   const body = parsed.body.replace(/^\n+/, "");
   await Bun.write(join(CONTENT_DIR, post.file_path), serializeFrontMatter(fm) + "\n\n" + body + "\n");
 }

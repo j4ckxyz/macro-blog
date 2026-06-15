@@ -83,6 +83,7 @@ process.env.MACROBLOG_UPLOADS = uploads;
 process.env.MACROBLOG_DB = db;
 process.env.MACROBLOG_CONFIG = configPath;
 process.env.MACROBLOG_NO_BUILD = "1";
+process.env.MACROBLOG_NO_DISPATCH = "1";
 process.env.MACROBLOG_QUIET = "1";
 process.env.TEST_PASSWORD = "test-password";
 
