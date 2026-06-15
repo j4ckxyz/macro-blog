@@ -10,7 +10,7 @@ import {
   readPostFile,
   parseFrontMatter,
 } from "../services/content.ts";
-import { queueSyndication, listSyndicateTargets } from "../services/syndication.ts";
+import { queueSyndication, listSyndicateTargets, dispatchSoon } from "../services/syndication.ts";
 import { triggerBuild } from "../services/hugo.ts";
 import { getDb } from "../db/index.ts";
 import type { PostRow } from "../db/schema.ts";
@@ -109,6 +109,7 @@ micropub.post("/", requireAuth(), async (c) => {
 
   if (create.syndicateTo.length) {
     queueSyndication(post.id, create.syndicateTo, db);
+    dispatchSoon();
   }
 
   triggerBuild();

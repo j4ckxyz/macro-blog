@@ -127,6 +127,7 @@ async function doFullBuild(): Promise<void> {
     if (useStaging) {
       await swapIntoPlace(stageDir, PUBLIC_DIR);
     }
+    console.log(`[hugo] build OK in ${Date.now() - start}ms → ${PUBLIC_DIR}`);
 
     await runPagefind();
   } catch (err) {

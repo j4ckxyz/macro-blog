@@ -1,4 +1,7 @@
 import { existsSync } from "node:fs";
+import { installConsoleCapture } from "./lib/logger.ts";
+// Capture all console output into the in-memory log buffer (admin Logs page).
+installConsoleCapture();
 import { app } from "./app.ts";
 import { getConfig, saveConfig, reloadConfig, CONFIG_PATH, type MacroblogConfig } from "./lib/config.ts";
 import { getDb } from "./db/index.ts";
