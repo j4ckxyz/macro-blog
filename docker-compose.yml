@@ -1,0 +1,24 @@
+# Macroblog — configure ./.env, then:  docker compose up -d --build
+services:
+  macroblog:
+    build: .
+    image: macroblog:local
+    container_name: macroblog
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      # Local only by default. On a VPS behind a reverse proxy, keep this as-is
+      # and proxy to it; to expose directly (with your own TLS) use "3000:3000".
+      - "127.0.0.1:${MACROBLOG_PORT:-3000}:3000"
+    volumes:
+      - mb_data:/data                       # config, database, backups
+      - mb_content:/app/hugo-site/content    # your posts (Markdown)
+      - mb_hugodata:/app/hugo-site/data      # cached webmentions / replies
+      - mb_uploads:/app/uploads              # media
+
+volumes:
+  mb_data:
+  mb_content:
+  mb_hugodata:
+  mb_uploads:

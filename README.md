@@ -26,7 +26,47 @@ native ActivityPub — Fediverse reach comes entirely from Mastodon cross-postin
 
 ## Quick start
 
-### One-liner (fresh machine)
+### Docker (recommended — works on macOS, Linux, Windows, any ARM/x86)
+
+Configure **one file** and build locally:
+
+```bash
+git clone https://github.com/j4ckxyz/macro-blog
+cd macro-blog
+cp .env.example .env        # ← the only file you edit
+$EDITOR .env                # set URL, identity, and an admin password
+docker compose up -d --build
+```
+
+That's it. Open **`http://127.0.0.1:3000/admin/`** and sign in with the password
+from `.env`. The container bundles Bun + Hugo, builds your site on boot, and
+persists everything in named volumes:
+
+| Volume | Holds |
+|---|---|
+| `mb_data` | config, database, backups |
+| `mb_content` | your posts (Markdown) |
+| `mb_uploads` | media |
+| `mb_hugodata` | cached webmentions / replies |
+
+Everything in `.env` is applied on **first boot** (config + session secret +
+admin password are generated automatically). After that, manage the blog from
+the web admin. Useful commands:
+
+```bash
+docker compose logs -f                                  # follow logs
+docker compose exec macroblog bun run macroblog --backup # write a backup into mb_data
+docker compose pull && docker compose up -d --build      # update (data is preserved)
+docker compose down                                      # stop (volumes kept)
+```
+
+To expose it publicly, keep the container bound to localhost and put a
+Cloudflare Tunnel or reverse proxy in front (see "Making it reachable" below),
+then set `MACROBLOG_SITE_URL` to your https domain and rebuild
+(Settings → Rebuild site). On a VPS you may instead map `"3000:3000"` in
+`docker-compose.yml` and terminate TLS at your proxy.
+
+### One-liner (fresh machine, no Docker)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/j4ckxyz/macro-blog/main/install.sh | bash

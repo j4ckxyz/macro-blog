@@ -1,23 +1,65 @@
+import { existsSync } from "node:fs";
 import { app } from "./app.ts";
-import { getConfig } from "./lib/config.ts";
+import { getConfig, saveConfig, reloadConfig, CONFIG_PATH, type MacroblogConfig } from "./lib/config.ts";
 import { getDb } from "./db/index.ts";
+import { hashPassword, randomToken } from "./lib/indieauth.ts";
 import { fullBuild, hugoAvailable } from "./services/hugo.ts";
 import { startScheduler } from "./services/scheduler.ts";
 
-const cfg = getConfig();
+/**
+ * First-run provisioning. Lets a container (or a fresh install) come up with
+ * zero manual steps when env vars are supplied:
+ *   - creates macroblog.config.yaml from defaults + MACROBLOG_SITE_* env vars
+ *   - generates a session secret if missing
+ *   - sets the admin password from MACROBLOG_ADMIN_PASSWORD if not yet set
+ */
+async function bootstrap(): Promise<MacroblogConfig> {
+  let cfg = getConfig();
+  const patch: any = {};
+
+  if (!existsSync(CONFIG_PATH)) {
+    patch.site = {
+      url: process.env.MACROBLOG_SITE_URL || cfg.site.url,
+      title: process.env.MACROBLOG_SITE_TITLE || cfg.site.title,
+      author: process.env.MACROBLOG_AUTHOR || cfg.site.author,
+      username: process.env.MACROBLOG_USERNAME || cfg.site.username,
+      description: process.env.MACROBLOG_DESCRIPTION || cfg.site.description,
+    };
+  }
+  if (!cfg.auth.session_secret) {
+    patch.auth = { ...(patch.auth || {}), session_secret: randomToken(48) };
+  }
+  if (!cfg.auth.password_hash && process.env.MACROBLOG_ADMIN_PASSWORD) {
+    patch.auth = { ...(patch.auth || {}), password_hash: await hashPassword(process.env.MACROBLOG_ADMIN_PASSWORD) };
+  }
+  if (Object.keys(patch).length) {
+    saveConfig(patch);
+    cfg = reloadConfig();
+  }
+  return cfg;
+}
+
+const cfg = await bootstrap();
 
 // Ensure DB is migrated.
 getDb();
 
+// Host/port may be overridden by env (Docker binds 0.0.0.0; mapping controls exposure).
+const host = process.env.MACROBLOG_HOST || cfg.server.host;
+const port = Number(process.env.PORT || process.env.MACROBLOG_PORT || cfg.server.port);
+
 const server = Bun.serve({
-  port: cfg.server.port,
-  hostname: cfg.server.host,
+  port,
+  hostname: host,
   fetch: app.fetch,
   idleTimeout: 60,
 });
 
-console.log(`✓ Macroblog listening on http://${cfg.server.host}:${server.port}`);
+console.log(`✓ Macroblog listening on http://${host}:${server.port}`);
 console.log(`  site URL: ${cfg.site.url}`);
+if (!cfg.auth.password_hash) {
+  console.warn("  ⚠ No admin password set. Set MACROBLOG_ADMIN_PASSWORD or run: bun run macroblog --set-password");
+}
 
 // Run a full build on startup, then start the scheduler.
 if (hugoAvailable()) {

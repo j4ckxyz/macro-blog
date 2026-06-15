@@ -1,0 +1,16 @@
+.git
+node_modules
+public
+backups
+.test-sandbox
+*.log
+macroblog.db
+macroblog.db-*
+macroblog.config.yaml
+uploads/*
+!uploads/.gitkeep
+hugo-site/resources
+hugo-site/.hugo_build.lock
+hugo-site/data/webmentions/*.json
+hugo-site/data/replies/*.json
+.DS_Store
