@@ -382,7 +382,7 @@
     editor.addEventListener("drop",e=>{if(e.dataTransfer.files.length)upload(e.dataTransfer.files);});
 
     const syndicate=new Set();
-    const mkToggle=(uid,label)=>{const cb=h("input",{type:"checkbox",onchange:e=>e.target.checked?syndicate.add(uid):syndicate.delete(uid)});return h("label",{class:"ck"},cb,label);};
+    const mkToggle=(uid,label,checked)=>{const cb=h("input",{type:"checkbox",onchange:e=>e.target.checked?syndicate.add(uid):syndicate.delete(uid)});if(checked){cb.checked=true;syndicate.add(uid);}return h("label",{class:"ck"},cb,label);};
 
     // The "⋯" options menu (post type, cross-posting, schedule, drafts) — mirrors Micro.blog.
     const types=h("div",{class:"types"},
@@ -391,13 +391,17 @@
     const bookmarkRow=h("div",{style:"display:none;margin-top:8px"},h("input",{class:"titlefield",placeholder:"Bookmark URL",oninput:e=>bookmarkUrl=e.target.value}));
     const xp=h("div",{style:"margin-top:10px"});
     const notConnected=(name)=>h("div",{class:"hint"},"⚠ "+name+" is enabled but not connected. Open Settings → Cross-posting and click Connect.");
+    // Default a connected platform's toggle ON when it's enabled in Settings,
+    // so new posts cross-post by default (you can still untick per-post).
     api("/api/oauth/bluesky").then(r=>r.json()).then(d=>{
-      if(d.connected) xp.append(mkToggle("bluesky", d.needs_reauth?"🦋 Bluesky — reconnect needed":"🦋 Cross-post to Bluesky"));
-      else if(cfg.crossposting&&cfg.crossposting.bluesky&&cfg.crossposting.bluesky.enabled) xp.append(notConnected("Bluesky"));
+      const on=!!(cfg.crossposting&&cfg.crossposting.bluesky&&cfg.crossposting.bluesky.enabled);
+      if(d.connected) xp.append(mkToggle("bluesky", d.needs_reauth?"🦋 Bluesky — reconnect needed":"🦋 Cross-post to Bluesky", on && !d.needs_reauth));
+      else if(on) xp.append(notConnected("Bluesky"));
     });
     api("/api/oauth/mastodon").then(r=>r.json()).then(d=>{
-      if(d.connected) xp.append(mkToggle("mastodon", d.needs_reauth?"🐘 Mastodon — reconnect needed":"🐘 Cross-post to Mastodon"));
-      else if(cfg.crossposting&&cfg.crossposting.mastodon&&cfg.crossposting.mastodon.enabled) xp.append(notConnected("Mastodon"));
+      const on=!!(cfg.crossposting&&cfg.crossposting.mastodon&&cfg.crossposting.mastodon.enabled);
+      if(d.connected) xp.append(mkToggle("mastodon", d.needs_reauth?"🐘 Mastodon — reconnect needed":"🐘 Cross-post to Mastodon", on && !d.needs_reauth));
+      else if(on) xp.append(notConnected("Mastodon"));
     });
 
     const menu=h("div",{class:"menu",style:"display:none"},
