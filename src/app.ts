@@ -12,6 +12,18 @@ import { adminApi } from "./routes/admin/api.ts";
 import { adminLogin } from "./routes/admin/login.ts";
 import { PUBLIC_DIR } from "./services/hugo.ts";
 import { UPLOADS_DIR } from "./routes/media.ts";
+import { HUGO_SITE } from "./services/content.ts";
+import { join } from "node:path";
+
+const ADMIN_HTML = join(HUGO_SITE, "static", "admin", "index.html");
+
+// Serve the admin app straight from disk so it stays reachable even when a
+// Hugo build fails (the public site can be broken; admin must not be).
+async function serveAdmin(c: any) {
+  const f = Bun.file(ADMIN_HTML);
+  if (await f.exists()) return c.html(await f.text());
+  return c.text("admin UI not found", 404);
+}
 
 export function createApp(): Hono {
   const app = new Hono();
@@ -33,6 +45,10 @@ export function createApp(): Hono {
   // Admin login (no auth) must be registered before the authenticated API.
   app.route("/api/login", adminLogin);
   app.route("/api", adminApi);
+
+  // Admin UI served by the app itself (independent of the Hugo build).
+  app.get("/admin", serveAdmin);
+  app.get("/admin/", serveAdmin);
 
   // Uploaded media served from the uploads directory.
   app.use(

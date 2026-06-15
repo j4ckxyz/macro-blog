@@ -20,6 +20,16 @@ function auth(extra: Record<string, string> = {}) {
   return { Authorization: `Bearer ${token}`, ...extra };
 }
 
+describe("Admin UI availability", () => {
+  test("/admin is served by the app, independent of the Hugo build", async () => {
+    for (const p of ["/admin", "/admin/"]) {
+      const res = await app.request(p);
+      expect(res.status).toBe(200);
+      expect(await res.text()).toContain("Macroblog");
+    }
+  });
+});
+
 describe("Admin API: posts + config", () => {
   test("creates a post and lists it", async () => {
     const res = await app.request("/api/posts", {
