@@ -71,7 +71,6 @@
     .account{display:flex;align-items:center;gap:10px;padding:14px 6px 12px}
     .account .avatar{width:38px;height:38px;border-radius:50%;object-fit:cover;background:var(--field)}
     .account .handle{font-weight:700;font-size:16px}
-    .account .chev{margin-left:auto;color:var(--muted)}
 
     /* nav */
     .nav{display:flex;flex-direction:column;gap:2px;margin-top:2px}
@@ -104,7 +103,7 @@
     .tbtn:hover{background:var(--hover)}
     .count{color:var(--muted);font-size:16px;margin-left:6px}
     .count.over{color:#d33}
-    .count.thread{color:var(--accent,#3b82f6)}
+    .count.thread{color:var(--blue)}
     .spacer{flex:1}
     .btn{border-radius:9px;padding:10px 20px;font-size:16px;font-weight:700;border:1px solid transparent}
     .btn.secondary{background:var(--card);border-color:var(--input-border);color:var(--text)}
@@ -185,8 +184,9 @@
     .tl-item{display:flex;gap:12px;padding:14px 10px;border-bottom:1px solid var(--line);color:var(--text);border-radius:10px;margin-bottom:8px;transition: background .15s;}
     .tl-item:hover{background:var(--hover)}
     .tl-item.tl-selected{background:var(--hover);outline:2px solid var(--blue);outline-offset:-2px;}
-    .mention-reason{font-size:12px;color:var(--muted);background:var(--field);border-radius:20px;padding:1px 8px;margin-left:2px}
+    .mention-reason{font-size:12px;color:var(--muted);background:var(--tag-bg);border-radius:20px;padding:1px 8px;margin-left:2px}
     .empty-state{text-align:center;padding:48px 20px;color:var(--muted)}
+    .empty-state svg{width:38px;height:38px;opacity:.5;margin-bottom:10px}
     .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;display:flex;align-items:center;justify-content:center;padding:20px}
     .modal-box{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;max-width:520px;width:100%;max-height:85vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.35)}
     .bulkbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--blue);border-radius:10px;padding:8px 12px;margin-bottom:12px}
@@ -314,20 +314,24 @@
 
   /* Lightweight modal: title + body node + confirm/cancel. onConfirm may be async. */
   function showModal(title, bodyNode, confirmLabel, onConfirm, opts={}){
-    const overlay=h("div",{class:"modal-overlay"});
-    const close=()=>overlay.remove();
+    const overlay=h("div",{class:"modal-overlay",role:"dialog","aria-modal":"true","aria-label":title});
+    const onKey=e=>{ if(e.key==="Escape") close(); };
+    const close=()=>{ overlay.remove(); document.removeEventListener("keydown",onKey); };
     const confirmBtn=h("button",{class:"btn "+(opts.danger?"secondary":"primary"),style:opts.danger?"color:#d33":"",onclick:async()=>{
       confirmBtn.disabled=true;confirmBtn.textContent="Working…";
       try{ await onConfirm(); }finally{ close(); }
     }},confirmLabel||"Confirm");
+    const cancelBtn=h("button",{class:"btn secondary",onclick:close},"Cancel");
     const box=h("div",{class:"modal-box"},
       h("h3",{style:"margin:0 0 10px;font-size:18px"},title),
       bodyNode,
-      h("div",{style:"display:flex;gap:8px;justify-content:flex-end;margin-top:18px"},
-        h("button",{class:"btn secondary",onclick:close},"Cancel"), confirmBtn));
+      h("div",{style:"display:flex;gap:8px;justify-content:flex-end;margin-top:18px"}, cancelBtn, confirmBtn));
     overlay.append(box);
     overlay.addEventListener("click",e=>{if(e.target===overlay)close();});
+    document.addEventListener("keydown",onKey);
     document.body.append(overlay);
+    // Default focus to the non-destructive action for safer keyboard use.
+    cancelBtn.focus();
     return close;
   }
 
@@ -501,7 +505,6 @@
     bold: svg('<path d="M6 12h9a4 4 0 0 1 0 8H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h7a4 4 0 0 1 0 8"/>'),
     italic: svg('<line x1="19" x2="10" y1="4" y2="4"/><line x1="14" x2="5" y1="20" y2="20"/><line x1="15" x2="9" y1="4" y2="20"/>'),
     link: svg('<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>'),
-    chev: svg('<path d="m6 9 6 6 6-6"/>'),
     home: svg('<path d="M3 9.5 12 3l9 6.5"/><path d="M5 10v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V10"/><path d="M9 21v-6h6v6"/>'),
     file: svg('<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/><path d="M8 13h8"/><path d="M8 17h8"/>'),
     terminal: svg('<polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/>'),
@@ -528,7 +531,8 @@
     if(!items.length){ tlSelectedIndex=-1; return; }
     tlSelectedIndex = Math.max(0, Math.min(i, items.length-1));
     items.forEach((el,idx)=>el.classList.toggle("tl-selected", idx===tlSelectedIndex));
-    items[tlSelectedIndex].scrollIntoView({block:"center",behavior:"smooth"});
+    const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    items[tlSelectedIndex].scrollIntoView({block:"center",behavior:reduce?"auto":"smooth"});
   }
   function isTypingTarget(el){
     if(!el) return false;
@@ -1649,7 +1653,7 @@
     const anyConn=bsS.connected||maS.connected;
     if(!social.length){
       view.append(h("div",{class:"empty-state"},
-        h("div",{style:"font-size:34px;margin-bottom:6px"},"@"),
+        h("div",{html:ICON.at}),
         h("p",{style:"color:var(--muted);margin:0"}, anyConn
           ? "No mentions yet. When someone @-mentions, replies to, or quotes you on Bluesky or Mastodon, it shows up here."
           : "Connect Bluesky or Mastodon in Settings to pull in your mentions.")));

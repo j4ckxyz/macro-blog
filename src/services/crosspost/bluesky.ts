@@ -564,30 +564,6 @@ export async function crosspostBluesky(payload: CrosspostPayload): Promise<Cross
   return { remoteId: firstUri, remoteUrl: firstUrl };
 }
 
-/** Post a reply to a Bluesky post (used by the unified Mentions tab). */
-export async function replyBluesky(
-  parent: { uri: string; cid: string },
-  root: { uri: string; cid: string },
-  text: string,
-): Promise<{ remoteId: string; remoteUrl: string }> {
-  await ensureFreshToken();
-  const session = loadSession();
-  const record: any = {
-    $type: "app.bsky.feed.post",
-    text,
-    facets: buildFacets(text),
-    createdAt: new Date().toISOString(),
-    reply: { root, parent },
-  };
-  const result = await xrpc(session, "com.atproto.repo.createRecord", "POST", {
-    repo: session.did,
-    collection: "app.bsky.feed.post",
-    record,
-  });
-  const rkey = (result.uri as string).split("/").pop();
-  const handle = getTokenExtra("bluesky").handle || session.did;
-  return { remoteId: result.uri, remoteUrl: `https://bsky.app/profile/${handle}/post/${rkey}` };
-}
 
 /**
  * Post a (possibly multi-part) reply thread to a Bluesky post. Each chunk

@@ -1,6 +1,6 @@
 {{- /* u-syndication links for a post's cross-posted copies. */ -}}
 {{ with .Params.syndication }}
-<div class="syndication" style="display: flex; gap: 12px; align-items: center; margin-top: 12px;">
+<div class="syndication" style="display: flex; gap: 12px; align-items: center;">
   {{ range . }}
     {{ if in . "bsky.app" }}
       <a class="u-syndication" rel="syndication" href="{{ . }}" title="View on Bluesky" style="display: inline-flex; align-items: center; text-decoration: none;">

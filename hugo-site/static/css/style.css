@@ -93,7 +93,7 @@ a { color: var(--accent); }
 .post-meta .dt-published { display: inline-block; }
 .post-meta .categories { display: block; margin-top: .4rem; }
 .post-meta .p-author.author { margin-top: .9rem; }
-.post-meta .syndication { margin-top: .9rem !important; }
+.post-meta .syndication { margin-top: .9rem; }
 .permalink { text-decoration: none; }
 .p-category { margin-right: .4rem; text-decoration: none; }
 

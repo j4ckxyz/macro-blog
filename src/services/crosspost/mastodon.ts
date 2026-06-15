@@ -216,28 +216,6 @@ export async function fetchMastodonHomeTimeline(limit = 40): Promise<NormalizedT
   });
 }
 
-/** Post a reply to a Mastodon status (used by the unified Mentions tab). */
-export async function replyMastodon(
-  inReplyToId: string,
-  text: string,
-  fetchImpl: typeof fetch = fetch,
-): Promise<{ id: string; url: string }> {
-  const cfg = getConfig();
-  const base = instanceUrl();
-  const res = await fetchImpl(`${base}/api/v1/statuses`, {
-    method: "POST",
-    headers: { Authorization: authHeader(), "content-type": "application/json" },
-    body: JSON.stringify({
-      status: text,
-      in_reply_to_id: inReplyToId,
-      visibility: "public",
-      language: cfg.site.language || "en",
-    }),
-  });
-  if (!res.ok) throw new Error(`mastodon reply failed: ${res.status} ${await res.text()}`);
-  const json = (await res.json()) as { id: string; url: string };
-  return { id: json.id, url: json.url };
-}
 
 /**
  * Fetch @-mentions (and reply notifications) from the Mastodon home account so
