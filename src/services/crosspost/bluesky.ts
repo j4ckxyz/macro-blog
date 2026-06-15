@@ -108,7 +108,7 @@ function truncateGraphemes(text: string, max: number): string {
 }
 
 export function markdownToRichText(md: string): { text: string; facets: any[] } {
-  let working = md.replace(/!\[[^\]]*\]\([^)]*\)/g, "");
+  let working = md.trim().replace(/!\[[^\]]*\]\([^)]*\)/g, "");
 
   working = working
     .replace(/^#{1,6}\s+/gm, "")
@@ -159,7 +159,7 @@ export function markdownToRichText(md: string): { text: string; facets: any[] } 
 
   facets.sort((a, b) => a.index.byteStart - b.index.byteStart);
 
-  return { text: resultText.trim(), facets };
+  return { text: resultText, facets };
 }
 
 function truncateRichText(text: string, facets: any[], max: number): { text: string; facets: any[] } {

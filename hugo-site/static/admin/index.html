@@ -450,6 +450,20 @@
       h("a",{href:"#",onclick:e=>{e.preventDefault();navigate("settings");}},"Reconnect in Settings →"));
   }
 
+  function getPlainTextLength(md) {
+    if (!md) return 0;
+    const plain = md
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1")
+      .replace(/^#{1,6}\s+/gm, "")
+      .replace(/(\*\*|__)(.*?)\1/g, "$2")
+      .replace(/(\*|_)(.*?)\1/g, "$2")
+      .replace(/`([^`]+)`/g, "$1")
+      .replace(/^>\s?/gm, "")
+      .trim();
+    return [...plain].length;
+  }
+
   /* ---------------- composer ---------------- */
   function composer(view){
     let type="post";
@@ -466,7 +480,7 @@
     let linkBack = true;
     let selectedFolder = "";
 
-    editor.addEventListener("input",()=>{const n=[...editor.value].length;count.textContent=n+"/300";count.classList.toggle("over",n>300);});
+    editor.addEventListener("input",()=>{const n=getPlainTextLength(editor.value);count.textContent=n+"/300";count.classList.toggle("over",n>300);});
 
     const wrap=(d)=>{const s=editor.selectionStart,e=editor.selectionEnd,v=editor.value;editor.value=v.slice(0,s)+d+v.slice(s,e)+d+v.slice(e);editor.focus();editor.dispatchEvent(new Event("input"));};
     const tb=(icon,fn)=>h("button",{class:"tbtn",html:icon,onclick:fn});

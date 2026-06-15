@@ -103,6 +103,7 @@ export async function refreshTimeline(db: Database = getDb()): Promise<RefreshRe
 }
 
 export interface TimelineItem extends Omit<NormalizedTimelineItem, "media"> {
+  id: number;
   media: TimelineMedia[];
 }
 
@@ -121,6 +122,7 @@ export function getTimeline(limit = 100, q?: string, db: Database = getDb()): Ti
       .all(limit) as TimelineRow[];
   }
   return rows.map((r) => ({
+    id: r.id,
     platform: r.platform as "bluesky" | "mastodon",
     remoteId: r.remote_id,
     remoteCid: r.remote_cid,
