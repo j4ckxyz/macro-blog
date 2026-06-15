@@ -1,6 +1,6 @@
 import { getToken, getTokenExtra, saveToken, setReauth } from "../../lib/tokens.ts";
 import { dpopFetch, type DpopKeypair } from "../../lib/dpop.ts";
-import { refreshBlueskyToken } from "../../routes/oauth/bluesky.ts";
+import { refreshBlueskyToken, BSKY_APPVIEW } from "../../routes/oauth/bluesky.ts";
 import type { CrosspostPayload, CrosspostResult } from "./types.ts";
 import type { NormalizedTimelineItem } from "../timeline.ts";
 
@@ -45,22 +45,28 @@ async function ensureFreshToken(): Promise<void> {
   }
 }
 
-/** Authenticated XRPC call to the user's PDS with DPoP. */
+/** Authenticated XRPC call to the user's PDS with DPoP.
+ * `proxy` sets the atproto-proxy target for AppView read methods (timeline,
+ * threads), which the PDS forwards to the Bluesky AppView. */
 async function xrpc(
   session: BlueskySession,
   nsid: string,
   method: "GET" | "POST",
   body?: unknown,
   query?: Record<string, string>,
+  proxy?: string,
 ): Promise<any> {
   let url = `${session.pds}/xrpc/${nsid}`;
   if (query) url += "?" + new URLSearchParams(query).toString();
+  const headers: Record<string, string> = {};
+  if (body) headers["content-type"] = "application/json";
+  if (proxy) headers["atproto-proxy"] = proxy;
   const { res, nonce } = await dpopFetch(url, {
     method,
     keys: session.keys,
     accessToken: session.accessToken,
     dpopNonce: session.nonce,
-    headers: body ? { "content-type": "application/json" } : undefined,
+    headers: Object.keys(headers).length ? headers : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });
   if (nonce && nonce !== session.nonce) {
@@ -224,7 +230,7 @@ export async function fetchBlueskyTimeline(limit = 50): Promise<NormalizedTimeli
   const session = loadSession();
   const result = await xrpc(session, "app.bsky.feed.getTimeline", "GET", undefined, {
     limit: String(limit),
-  });
+  }, BSKY_APPVIEW);
   const items: NormalizedTimelineItem[] = [];
   for (const entry of result?.feed ?? []) {
     const p = entry.post;
@@ -263,7 +269,7 @@ export async function fetchBlueskyReplies(
   const result = await xrpc(session, "app.bsky.feed.getPostThread", "GET", undefined, {
     uri: atUri,
     depth: "1",
-  });
+  }, BSKY_APPVIEW);
   const post = result?.thread?.post;
   const root = post ? { uri: post.uri, cid: post.cid } : null;
   return { root, replies: result?.thread?.replies ?? [] };

@@ -192,12 +192,16 @@ Macroblog speaks **ATProto OAuth 2.0** with DPoP, PKCE and PAR. Crucially it ask
 for the **minimum permissions** it needs rather than full account access:
 
 ```
-atproto                         # authenticate (required)
-repo:app.bsky.feed.post         # create posts AND replies
-blob:image/*                    # upload media for photo posts
-rpc:app.bsky.feed.getTimeline   # read your following feed (Timeline tab)
-rpc:app.bsky.feed.getPostThread # read replies so you can answer them (Mentions)
+atproto                                                          # authenticate
+repo:app.bsky.feed.post                                          # create posts AND replies
+blob:image/*                                                     # upload media for photo posts
+rpc:app.bsky.feed.getTimeline?aud=did:web:api.bsky.app#bsky_appview   # following feed
+rpc:app.bsky.feed.getPostThread?aud=did:web:api.bsky.app#bsky_appview # read replies (Mentions)
 ```
+
+(AppView read RPCs are proxied through your PDS to the Bluesky AppView, so the
+granular scope carries the `?aud=<appview-did>` qualifier — Bluesky rejects a
+bare `rpc:<nsid>` with `ScopeMissingError`.)
 
 It never requests the deprecated broad `transition` generic scope, so Macroblog
 **cannot** touch your follows, likes, DMs, profile, or account settings.

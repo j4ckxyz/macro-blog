@@ -71,10 +71,12 @@ describe("Mastodon home timeline", () => {
 
 describe("Bluesky timeline", () => {
   test("getTimeline normalizes feed items and reposts", async () => {
+    let proxyHeader: string | null = null;
     server = Bun.serve({
       port: 0,
       fetch(req) {
         if (new URL(req.url).pathname === "/xrpc/app.bsky.feed.getTimeline") {
+          proxyHeader = req.headers.get("atproto-proxy");
           return Response.json({ feed: [
             { post: { uri: "at://did:plc:a/app.bsky.feed.post/abc", cid: "c1",
               author: { handle: "alice.bsky.social", displayName: "Alice", avatar: "a.png" },
@@ -91,6 +93,7 @@ describe("Bluesky timeline", () => {
     await connectBluesky(`http://127.0.0.1:${server.port}`);
     const { fetchBlueskyTimeline } = await import("../src/services/crosspost/bluesky.ts");
     const items = await fetchBlueskyTimeline();
+    expect(proxyHeader).toBe("did:web:api.bsky.app#bsky_appview"); // proxied to AppView
     expect(items.length).toBe(2);
     expect(items[0].author).toBe("Alice");
     expect(items[0].authorHandle).toBe("@alice.bsky.social");

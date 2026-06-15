@@ -17,24 +17,29 @@ import { saveToken, getToken, getTokenExtra } from "../../lib/tokens.ts";
 
 export const bluesky = new Hono();
 
+/** The Bluesky AppView service that read RPCs (timeline, threads) are proxied to. */
+export const BSKY_APPVIEW = "did:web:api.bsky.app#bsky_appview";
+
 /**
  * Minimal granular permission scopes Macroblog actually needs — and ONLY these:
  *  - `atproto`                          authenticate (required)
- *  - `repo:app.bsky.feed.post`          create posts AND replies
+ *  - `repo:app.bsky.feed.post`          create posts AND replies (PDS repo write)
  *  - `blob:image/*`                     upload media for photo posts
- *  - `rpc:app.bsky.feed.getTimeline`    read your following feed (Timeline tab)
- *  - `rpc:app.bsky.feed.getPostThread`  read replies (Mentions tab)
+ *  - `rpc:app.bsky.feed.getTimeline?aud=…`    read your following feed
+ *  - `rpc:app.bsky.feed.getPostThread?aud=…`  read replies (Mentions tab)
  *
- * This intentionally does NOT grant access to follows, likes, DMs, profile
- * edits, account settings, or arbitrary record types. Override via
- * `crossposting.bluesky.scope` only if your PDS lacks granular scope support.
+ * AppView read RPCs are proxied through your PDS to the Bluesky AppView, so the
+ * granular scope MUST carry the `?aud=<appview-did>` qualifier (a bare
+ * `rpc:<nsid>` is rejected with ScopeMissingError). This still grants NO access
+ * to follows, likes, DMs, profile edits, account settings, or other record
+ * types. Override via `crossposting.bluesky.scope` only if needed.
  */
 export const BLUESKY_SCOPES = [
   "atproto",
   "repo:app.bsky.feed.post",
   "blob:image/*",
-  "rpc:app.bsky.feed.getTimeline",
-  "rpc:app.bsky.feed.getPostThread",
+  `rpc:app.bsky.feed.getTimeline?aud=${BSKY_APPVIEW}`,
+  `rpc:app.bsky.feed.getPostThread?aud=${BSKY_APPVIEW}`,
 ].join(" ");
 
 export function blueskyScope(): string {

@@ -91,6 +91,9 @@ describe("Bluesky OAuth config safety", () => {
     // Least-privilege: base identity + post + image upload + read thread only.
     expect(meta.scope).toContain("atproto");
     expect(meta.scope).toContain("repo:app.bsky.feed.post");
+    // AppView read RPCs must carry the ?aud=<appview-did> qualifier.
+    expect(meta.scope).toContain("rpc:app.bsky.feed.getTimeline?aud=did:web:api.bsky.app#bsky_appview");
+    expect(meta.scope).toContain("rpc:app.bsky.feed.getPostThread?aud=did:web:api.bsky.app#bsky_appview");
     expect(meta.scope).not.toContain("transition:generic");
     // Must NOT grant follows/likes/DMs/profile/account scopes.
     expect(meta.scope).not.toContain("repo:app.bsky.graph");
