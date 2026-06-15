@@ -93,7 +93,7 @@ describe("Bluesky timeline", () => {
     await connectBluesky(`http://127.0.0.1:${server.port}`);
     const { fetchBlueskyTimeline } = await import("../src/services/crosspost/bluesky.ts");
     const items = await fetchBlueskyTimeline();
-    expect(proxyHeader).toBe("did:web:api.bsky.app#bsky_appview"); // proxied to AppView
+    expect(proxyHeader === "did:web:api.bsky.app#bsky_appview").toBe(true); // proxied to AppView
     expect(items.length).toBe(2);
     expect(items[0].author).toBe("Alice");
     expect(items[0].authorHandle).toBe("@alice.bsky.social");
