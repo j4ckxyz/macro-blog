@@ -73,3 +73,18 @@ export function isConnected(platform: string, db: Database = getDb()): boolean {
   const row = getToken(platform, db);
   return !!row?.access_token;
 }
+
+/**
+ * Flag (or clear) that a platform's token is no longer usable and the user must
+ * reconnect. Surfaced in the admin so they can re-authenticate.
+ */
+export function setReauth(platform: string, needs: boolean, db: Database = getDb()): void {
+  const extra = getTokenExtra(platform, db);
+  if (needs) extra.needs_reauth = true;
+  else delete extra.needs_reauth;
+  if (getToken(platform, db)) saveToken(platform, { extra }, db);
+}
+
+export function needsReauth(platform: string, db: Database = getDb()): boolean {
+  return getTokenExtra(platform, db).needs_reauth === true;
+}

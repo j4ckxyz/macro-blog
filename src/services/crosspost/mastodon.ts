@@ -1,6 +1,13 @@
 import { getConfig } from "../../lib/config.ts";
-import { getToken } from "../../lib/tokens.ts";
+import { getToken, setReauth } from "../../lib/tokens.ts";
 import type { CrosspostPayload, CrosspostResult } from "./types.ts";
+import type { NormalizedTimelineItem } from "../timeline.ts";
+
+/** Mark/clear reauth based on an API response status. */
+function checkAuth(status: number): void {
+  if (status === 401 || status === 403) setReauth("mastodon", true);
+  else setReauth("mastodon", false);
+}
 
 /**
  * Mastodon (and GoToSocial) cross-posting. Uses only stable v1 endpoints
@@ -82,10 +89,46 @@ export async function crosspostMastodon(
     body: JSON.stringify(body),
   });
   if (!res.ok) {
+    checkAuth(res.status);
     throw new Error(`mastodon post failed: ${res.status} ${await res.text()}`);
   }
+  checkAuth(res.status);
   const json = (await res.json()) as { id: string; url: string; uri: string };
   return { remoteId: json.id, remoteUrl: json.url || json.uri };
+}
+
+function stripHtml(html: string): string {
+  return html.replace(/<br\s*\/?>(\n)?/gi, "\n").replace(/<\/p>/gi, "\n\n").replace(/<[^>]+>/g, "").trim();
+}
+
+/** Fetch the authenticated user's home (following) timeline. */
+export async function fetchMastodonHomeTimeline(limit = 40): Promise<NormalizedTimelineItem[]> {
+  const base = instanceUrl();
+  const res = await fetch(`${base}/api/v1/timelines/home?limit=${limit}`, {
+    headers: { Authorization: authHeader() },
+  });
+  if (!res.ok) {
+    checkAuth(res.status);
+    throw new Error(`mastodon timeline failed: ${res.status}`);
+  }
+  checkAuth(res.status);
+  const statuses = (await res.json()) as any[];
+  return statuses.map((s) => {
+    const reblog = s.reblog;
+    const post = reblog || s;
+    return {
+      platform: "mastodon" as const,
+      remoteId: s.id,
+      author: post.account?.display_name || post.account?.username || "",
+      authorHandle: post.account?.acct ? "@" + post.account.acct : "",
+      avatar: post.account?.avatar || "",
+      content: stripHtml(post.content || ""),
+      url: post.url || post.uri || "",
+      media: (post.media_attachments || []).map((m: any) => ({ url: m.url, alt: m.description || "" })),
+      repostedBy: reblog ? s.account?.display_name || s.account?.username : null,
+      createdAt: post.created_at || new Date().toISOString(),
+    };
+  });
 }
 
 /** Post a reply to a Mastodon status (used by the unified Mentions tab). */

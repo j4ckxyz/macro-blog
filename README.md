@@ -17,7 +17,9 @@ native ActivityPub — Fediverse reach comes entirely from Mastodon cross-postin
 - **Webmentions** — receive (with moderation) and send, with endpoint discovery.
 - **JSON Feed 1.1 + RSS + microformats2** — importable into / followable from Micro.blog.
 - **Cross-posting** to Bluesky (ATProto OAuth, DPoP, **least-privilege scopes**) and Mastodon/GoToSocial.
+- **Following timeline** — your Bluesky + Mastodon home feeds, merged and cached server-side so they load instantly.
 - **Unified Mentions** — read and reply to Bluesky + Mastodon replies in one place.
+- **Mobile-friendly admin** — responsive composer, browsing, and a native-style bottom tab bar.
 - **Theme-compatible** — drop a Micro.blog Hugo theme into `hugo-site/themes/` and it just works.
 - **Web admin** — compose, manage posts/media/mentions, connect accounts, change settings, back up — all from the browser.
 - **Painless backups & updates** — your content/db/uploads/config are never overwritten by an update.
@@ -114,8 +116,11 @@ day-to-day use.
    - The **⋯** menu holds post type (Note / Article / Photo / Bookmark), tags,
      scheduling, "save as draft", and cross-post toggles.
    - The toolbar adds images (upload), audio, bold, italic and links.
-4. The sidebar gives you **Posts**, **Mentions** (webmentions + Bluesky/Mastodon
-   replies you can answer inline), **Uploads**, and **Settings**.
+4. The sidebar gives you **Timeline** (your merged Bluesky + Mastodon following
+   feed, refreshed every 5 min and cached so it's instant), **Posts**,
+   **Mentions** (webmentions + Bluesky/Mastodon replies you can answer inline),
+   **Uploads**, and **Settings**.
+   On phones this becomes a bottom tab bar — everything is touch-friendly.
 5. **Settings** is where you connect Bluesky/Mastodon, choose a theme, change
    your password, toggle webmentions/feeds, **download a backup**, and rebuild.
 
@@ -182,18 +187,23 @@ Macroblog speaks **ATProto OAuth 2.0** with DPoP, PKCE and PAR. Crucially it ask
 for the **minimum permissions** it needs rather than full account access:
 
 ```
-atproto                         # base identity (required)
-repo:app.bsky.feed.post         # create posts and replies — nothing else
-blob:image/*                    # upload images for photo posts
-rpc:app.bsky.feed.getPostThread # read replies for the Mentions tab
+atproto                         # authenticate (required)
+repo:app.bsky.feed.post         # create posts AND replies
+blob:image/*                    # upload media for photo posts
+rpc:app.bsky.feed.getTimeline   # read your following feed (Timeline tab)
+rpc:app.bsky.feed.getPostThread # read replies so you can answer them (Mentions)
 ```
 
 It never requests the deprecated broad `transition` generic scope, so Macroblog
 **cannot** touch your follows, likes, DMs, profile, or account settings.
 
-1. Set `crossposting.bluesky.enabled: true` and your `handle` in Settings.
-2. Click **Connect Bluesky** (Settings tab). You'll be sent to your PDS to authorize.
+1. Enter **any** Bluesky handle in Settings (e.g. `you.bsky.social` or your
+   custom domain) and set `crossposting.bluesky.enabled: true`.
+2. Click **Connect Bluesky**. You're sent to your own PDS to log in and approve.
 3. Done — tokens (and the DPoP key) are stored in the local DB.
+
+If a token later expires, the dashboard shows a **"connection expired —
+reconnect"** banner (same for Mastodon); one click re-runs the login.
 
 > If your PDS does not yet support granular scopes, set
 > `crossposting.bluesky.scope` to a scope string it accepts. Avoid
