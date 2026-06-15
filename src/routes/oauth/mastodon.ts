@@ -26,7 +26,11 @@ export async function ensureApp(
   const existing = db
     .query("SELECT * FROM mastodon_apps WHERE instance_url = ?")
     .get(base) as MastodonAppRow | null;
-  if (existing) return existing;
+  if (existing) {
+    console.log(`[mastodon] using cached app registration for ${base}`);
+    return existing;
+  }
+  console.log(`[mastodon] registering new app on ${base}…`);
 
   const res = await fetchImpl(`${base}/api/v1/apps`, {
     method: "POST",
@@ -105,5 +109,6 @@ mastodon.get("/callback", async (c) => {
     extra: { instance: flow.instance },
   });
 
+  console.log(`[mastodon] ✓ connected to ${flow.instance} (scopes: ${tok.scope ?? SCOPES})`);
   return c.html(`<p>Mastodon connected (${flow.instance}). You can close this window.</p>`);
 });

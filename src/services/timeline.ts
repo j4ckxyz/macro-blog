@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { getDb } from "../db/index.ts";
 import { getConfig } from "../lib/config.ts";
-import { isConnected } from "../lib/tokens.ts";
+import { isConnected, getTokenExtra } from "../lib/tokens.ts";
 import { fetchBlueskyTimeline } from "./crosspost/bluesky.ts";
 import { fetchMastodonHomeTimeline } from "./crosspost/mastodon.ts";
 import type { TimelineRow } from "../db/schema.ts";
@@ -53,22 +53,36 @@ export async function refreshTimeline(db: Database = getDb()): Promise<RefreshRe
   const result: RefreshResult = { bluesky: 0, mastodon: 0, errors: [] };
 
   if (cfg.crossposting.bluesky.enabled && isConnected("bluesky")) {
+    const handle = getTokenExtra("bluesky").handle || "?";
     try {
+      console.log(`[timeline] bluesky: fetching following feed as @${handle}…`);
       const items = await fetchBlueskyTimeline(50);
       for (const it of items) upsert(db, it);
       result.bluesky = items.length;
+      console.log(`[timeline] bluesky: fetched ${items.length} posts`);
     } catch (err) {
-      result.errors.push("bluesky: " + (err as Error).message);
+      const msg = (err as Error).message;
+      result.errors.push("bluesky: " + msg);
+      console.error(`[timeline] bluesky FAILED: ${msg}`);
     }
+  } else if (cfg.crossposting.bluesky.enabled) {
+    console.warn("[timeline] bluesky enabled but not connected — connect it in Settings");
   }
   if (cfg.crossposting.mastodon.enabled && isConnected("mastodon")) {
+    const inst = cfg.crossposting.mastodon.instance_url || "?";
     try {
+      console.log(`[timeline] mastodon: fetching home timeline from ${inst}…`);
       const items = await fetchMastodonHomeTimeline(40);
       for (const it of items) upsert(db, it);
       result.mastodon = items.length;
+      console.log(`[timeline] mastodon: fetched ${items.length} posts`);
     } catch (err) {
-      result.errors.push("mastodon: " + (err as Error).message);
+      const msg = (err as Error).message;
+      result.errors.push("mastodon: " + msg);
+      console.error(`[timeline] mastodon FAILED: ${msg}`);
     }
+  } else if (cfg.crossposting.mastodon.enabled) {
+    console.warn("[timeline] mastodon enabled but not connected — connect it in Settings");
   }
 
   // Prune to the newest MAX_ITEMS.

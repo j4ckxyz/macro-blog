@@ -217,6 +217,13 @@
     terminal: svg('<polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/>'),
   };
 
+  // Client-side routing: each view maps to /admin/<slug>.
+  const VIEW2SLUG={composer:"",timeline:"timeline",posts:"posts",pages:"pages",mentions:"mentions",media:"uploads",logs:"logs",settings:"settings"};
+  const SLUG2VIEW={"":"composer",timeline:"timeline",posts:"posts",pages:"pages",mentions:"mentions",uploads:"media",logs:"logs",settings:"settings"};
+  function viewFromPath(){ const m=location.pathname.match(/\/admin\/?(.*)$/); const slug=((m&&m[1])||"").replace(/\/+$/,""); return SLUG2VIEW[slug]||"composer"; }
+  function navigate(id){ active=id; const slug=VIEW2SLUG[id]||""; const path="/admin"+(slug?"/"+slug:"/"); if(location.pathname!==path){ try{history.pushState({id},"",path);}catch(e){} } renderApp(); window.scrollTo(0,0); }
+  window.addEventListener("popstate",()=>{ if(!token)return; active=viewFromPath(); renderApp(); });
+
   async function api(path, opts={}){
     const headers = Object.assign({Authorization:"Bearer "+token}, opts.headers||{});
     if (opts.json){ headers["content-type"]="application/json"; opts.body=JSON.stringify(opts.json); }
@@ -247,6 +254,7 @@
   async function boot(){
     if(!token){ renderLogin(); return; }
     try{ cfg = await (await api("/api/config")).json(); }catch(e){ return; }
+    active = viewFromPath();
     renderApp();
   }
 
@@ -266,8 +274,8 @@
   function renderApp(){
     root.innerHTML="";
     const main = h("div",{class:"main"});
-    const go=(id)=>{active=id;renderApp();window.scrollTo(0,0);};
-    const navItem=(id,icon,label)=>h("a",{class:"nav-a"+(active===id?" active":""),href:"#",onclick:e=>{e.preventDefault();go(id);}},
+    const go=(id)=>navigate(id);
+    const navItem=(id,icon,label)=>h("a",{class:"nav-a"+(active===id?" active":""),href:"/admin/"+(VIEW2SLUG[id]||""),onclick:e=>{e.preventDefault();go(id);}},
       h("span",{class:"ic",html:icon}), label);
 
     const sidebar = h("div",{class:"sidebar"},
@@ -307,7 +315,7 @@
     return h("div",{class:"banner"}, `⚠ Your ${name} connection expired. `,
       h("a",{href:"#",onclick:e=>{e.preventDefault();go0("settings");}},"Reconnect in Settings →"));
   }
-  function go0(id){active=id;renderApp();window.scrollTo(0,0);}
+  function go0(id){ navigate(id); }
 
   /* ---------------- composer ---------------- */
   function composer(view){
