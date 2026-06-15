@@ -95,9 +95,13 @@ async function doFullBuild(): Promise<void> {
           // NB: Hugo treats "_" as a nesting delimiter in env vars, so these
           // param keys are intentionally underscore-free.
           HUGO_PARAMS_APPEARANCE_FONT: cfg.appearance.font,
-          HUGO_PARAMS_APPEARANCE_ACCENTCOLOR: cfg.appearance.accent_color,
-          HUGO_PARAMS_APPEARANCE_BGCOLOR: cfg.appearance.background_color,
-          HUGO_PARAMS_APPEARANCE_TEXTCOLOR: cfg.appearance.text_color,
+          HUGO_PARAMS_APPEARANCE_MODE: cfg.appearance.mode,
+          HUGO_PARAMS_APPEARANCE_LIGHTACCENT: cfg.appearance.light_accent,
+          HUGO_PARAMS_APPEARANCE_LIGHTBG: cfg.appearance.light_background,
+          HUGO_PARAMS_APPEARANCE_LIGHTTEXT: cfg.appearance.light_text,
+          HUGO_PARAMS_APPEARANCE_DARKACCENT: cfg.appearance.dark_accent,
+          HUGO_PARAMS_APPEARANCE_DARKBG: cfg.appearance.dark_background,
+          HUGO_PARAMS_APPEARANCE_DARKTEXT: cfg.appearance.dark_text,
         },
         stdout: "pipe",
         stderr: "pipe",

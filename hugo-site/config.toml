@@ -16,9 +16,13 @@ summaryLength = 30
     username = "author"
   [params.appearance]
     font = "system"
-    accentcolor = "#111111"
-    bgcolor = "#ffffff"
-    textcolor = "#222426"
+    mode = "auto"
+    lightaccent = "#111111"
+    lightbg = "#ffffff"
+    lighttext = "#222426"
+    darkaccent = "#8ab4ff"
+    darkbg = "#15171a"
+    darktext = "#e6e8eb"
 
 [taxonomies]
   category = "categories"

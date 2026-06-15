@@ -122,6 +122,15 @@
     .conn.reauth{color:#a23}
     .hint{font-size:13px;color:#a23;background:#fff7f0;border:1px solid #f0d8c0;border-radius:8px;padding:8px 10px;margin-top:6px}
     .logbox{background:#0d0f12;color:#d6e2ec;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.5;padding:14px;border-radius:10px;white-space:pre-wrap;overflow:auto;max-height:70vh;word-break:break-word}
+    .colorrow{display:flex;gap:18px;flex-wrap:wrap}
+    .colorrow label{display:flex;align-items:center;gap:8px;font-size:14px;color:#555}
+    .theme-preview{flex:1;min-width:170px;border:1px solid var(--border);border-radius:12px;padding:14px}
+    .preview{border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-top:12px}
+    .preview img{max-width:100%;border-radius:8px;margin:8px 0}
+    .preview .hashtag{color:var(--blue);font-weight:600}
+    .photo-edit{display:flex;gap:10px;align-items:flex-start;margin-top:8px}
+    .photo-edit img{width:64px;height:64px;object-fit:cover;border-radius:8px;flex:0 0 64px}
+    .photo-edit input{flex:1;border:1px solid #dfe2e6;border-radius:8px;padding:8px 10px;font-size:14px}
 
     /* timeline */
     .tl-item{display:flex;gap:12px;padding:14px 2px;border-bottom:1px solid var(--line);color:var(--text)}
@@ -171,6 +180,7 @@
 
   <script>
   const API = location.origin;
+  const FONT_STACKS={system:"-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",sans:"Helvetica,Arial,sans-serif",serif:"Georgia,'Times New Roman',serif",mono:"ui-monospace,Menlo,Consolas,monospace",rounded:"'Avenir Next','Segoe UI',system-ui,sans-serif"};
   let token = localStorage.getItem("mb_token") || "";
   let cfg = null;
   let active = "composer";
@@ -307,6 +317,7 @@
     const editor=h("textarea",{class:"editor",placeholder:"Hello from Macroblog. Use **Markdown** for styling, links, _and more_."});
     const count=h("span",{class:"count"},"0/300");
     const toast=h("div",{class:"toast"});
+    const previewPanel=h("div",{class:"preview",style:"display:none"});
     const tags=h("input",{type:"text",placeholder:"tags, comma separated"});
     const sched=h("input",{type:"datetime-local"});
     const photoList=h("div",{class:"photolist"});
@@ -318,7 +329,17 @@
     const tb=(icon,fn)=>h("button",{class:"tbtn",html:icon,onclick:fn});
     const fileInput=h("input",{type:"file",accept:"image/*",multiple:"true",style:"display:none",onchange:e=>upload(e.target.files)});
     async function upload(files){
-      for(const f of files){const fd=new FormData();fd.set("file",f);const d=await (await api("/api/media",{method:"POST",body:fd})).json();if(d.url){photos.push({url:d.url,alt:""});photoList.append(h("img",{src:d.url}));}}
+      for(const f of files){
+        const fd=new FormData();fd.set("file",f);
+        const d=await (await api("/api/media",{method:"POST",body:fd})).json();
+        if(!d.url) continue;
+        const photo={url:d.url,alt:""};
+        photos.push(photo);
+        const altInput=h("input",{type:"text",placeholder:"Describe this image (alt text)…",oninput:e=>{photo.alt=e.target.value;}});
+        const remove=h("button",{class:"btn secondary",style:"padding:6px 10px;color:#d33",onclick:()=>{const i=photos.indexOf(photo);if(i>=0)photos.splice(i,1);row.remove();}},"✕");
+        const row=h("div",{class:"photo-edit"},h("img",{src:d.url,alt:""}),altInput,remove);
+        photoList.append(row);
+      }
     }
     // drag-and-drop straight onto the editor
     ["dragover","dragenter"].forEach(ev=>editor.addEventListener(ev,e=>{e.preventDefault();editor.style.borderColor="#7aa7ee";}));
@@ -378,11 +399,47 @@
           tb(ICON.bold,()=>wrap("**")), tb(ICON.italic,()=>wrap("_")),
           tb(ICON.link,()=>{const u=prompt("Link URL");if(u){const s=editor.selectionStart,e=editor.selectionEnd,v=editor.value,txt=v.slice(s,e)||"link";editor.value=v.slice(0,s)+"["+txt+"]("+u+")"+v.slice(e);editor.dispatchEvent(new Event("input"));}}),
           count, h("div",{class:"spacer"}),
-          h("button",{class:"btn secondary",onclick:()=>toast.textContent=preview(editor.value)},"Preview"),
+          h("button",{class:"btn secondary",onclick:togglePreview},"Preview"),
           h("button",{class:"btn primary",onclick:submit(false)},"Post")),
-        fileInput, toast));
+        previewPanel, fileInput, toast));
+
+    function togglePreview(){
+      if(previewPanel.style.display==="block"){ previewPanel.style.display="none"; return; }
+      const ap=(cfg&&cfg.appearance)||{};
+      previewPanel.style.fontFamily=FONT_STACKS[ap.font]||FONT_STACKS.system;
+      previewPanel.style.background=ap.light_background||"#fff";
+      previewPanel.style.color=ap.light_text||"#222";
+      previewPanel.style.setProperty("--blue", ap.light_accent||"#1f6feb");
+      let html=renderMarkdown(editor.value||"");
+      if(title.value && type==="article") html="<h1 style='margin-top:0'>"+escapeHtml(title.value)+"</h1>"+html;
+      for(const p of photos){ html+='<img src="'+p.url+'" alt="'+escapeHtml(p.alt||"")+'" title="'+escapeHtml(p.alt||"")+'">'; }
+      previewPanel.innerHTML=html||"<p style='opacity:.5'>Nothing to preview yet.</p>";
+      previewPanel.style.display="block";
+    }
   }
-  function preview(md){return "Preview: "+md.replace(/\*\*(.*?)\*\*/g,"$1").replace(/_(.*?)_/g,"$1").slice(0,140);}
+  function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+  // Minimal Markdown → HTML for the composer preview (bold/italic/links/hashtags/images/code).
+  function renderMarkdown(md){
+    const blocks=String(md).split(/\n{2,}/);
+    return blocks.map(block=>{
+      let s=escapeHtml(block);
+      // images ![alt](url)
+      s=s.replace(/!\[([^\]]*)\]\((https?:\/\/[^)\s]+|\/[^)\s]+)\)/g,(m,alt,u)=>'<img src="'+u+'" alt="'+alt+'">');
+      // links [text](url)
+      s=s.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+|\/[^)\s]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');
+      // bare urls (not already inside an attribute or anchor text)
+      s=s.replace(/(^|[\s])(https?:\/\/[^\s<]+)/g,'$1<a href="$2" target="_blank" rel="noopener">$2</a>');
+      // bold then italic then inline code
+      s=s.replace(/\*\*([^*]+)\*\*/g,"<strong>$1</strong>").replace(/__([^_]+)__/g,"<strong>$1</strong>");
+      s=s.replace(/(^|[^*])\*([^*\n]+)\*/g,"$1<em>$2</em>").replace(/(^|[^_\w])_([^_\n]+)_/g,"$1<em>$2</em>");
+      s=s.replace(/`([^`]+)`/g,"<code>$1</code>");
+      // hashtags
+      s=s.replace(/(^|\s)#([A-Za-z0-9_]+)/g,'$1<span class="hashtag">#$2</span>');
+      // headings
+      if(/^#{1,6}\s/.test(block)){ const lvl=block.match(/^#+/)[0].length; const txt=s.replace(/^#{1,6}\s/,""); return "<h"+Math.min(lvl+1,6)+">"+txt+"</h"+Math.min(lvl+1,6)+">"; }
+      return "<p>"+s.replace(/\n/g,"<br>")+"</p>";
+    }).join("\n");
+  }
 
   /* ---------------- posts ---------------- */
   async function postsView(view){
@@ -581,8 +638,22 @@
       if(d.url){ avatarUrl=d.url; avatarImg.src=d.url; avatarImg.style.visibility="visible"; }
     }});
     const fontSel=h("select",{},...[["system","System default"],["sans","Sans-serif"],["serif","Serif"],["mono","Monospace"],["rounded","Rounded"]].map(([v,l])=>{const o=h("option",{value:v},l);if(v===ap.font)o.selected=true;return o;}));
-    const colorInput=v=>h("input",{type:"color",value:v||"#000000",style:"width:54px;height:38px;border:1px solid #dfe2e6;border-radius:8px;padding:2px;background:#fff"});
-    const accent=colorInput(ap.accent_color),bg=colorInput(ap.background_color),txt=colorInput(ap.text_color);
+    const modeSel=h("select",{},...[["auto","Auto (follow device)"],["light","Always light"],["dark","Always dark"]].map(([v,l])=>{const o=h("option",{value:v},l);if(v===(ap.mode||"auto"))o.selected=true;return o;}));
+    const colorInput=v=>h("input",{type:"color",value:v||"#000000",style:"width:48px;height:34px;border:1px solid #dfe2e6;border-radius:8px;padding:2px;background:#fff"});
+    const fontStacks={system:"-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",sans:"Helvetica,Arial,sans-serif",serif:"Georgia,'Times New Roman',serif",mono:"ui-monospace,Menlo,Consolas,monospace",rounded:"'Avenir Next','Segoe UI',system-ui,sans-serif"};
+    const lAccent=colorInput(ap.light_accent),lBg=colorInput(ap.light_background),lTxt=colorInput(ap.light_text);
+    const dAccent=colorInput(ap.dark_accent),dBg=colorInput(ap.dark_background),dTxt=colorInput(ap.dark_text);
+    // Live preview of both modes
+    const previewCard=(label,acc,b,t)=>{const card=h("div",{class:"theme-preview",style:"background:"+b+";color:"+t+";font-family:"+fontStacks[fontSel.value]});
+      card.append(h("div",{style:"font-size:12px;opacity:.7;margin-bottom:6px"},label),
+        h("div",{style:"font-weight:700;font-size:16px"},c.site.title||"Your Blog"),
+        h("div",{style:"font-size:13px;margin:4px 0"},"A sample post with a ",h("a",{style:"color:"+acc},"link"),"."),
+        h("button",{style:"background:"+acc+";color:"+b+";border:0;border-radius:6px;padding:4px 10px;font-size:12px"},"Button"));
+      return card;};
+    const previewWrap=h("div",{style:"display:flex;gap:12px;flex-wrap:wrap;margin-top:8px"});
+    const renderPreview=()=>{previewWrap.innerHTML="";previewWrap.append(previewCard("Light",lAccent.value,lBg.value,lTxt.value),previewCard("Dark",dAccent.value,dBg.value,dTxt.value));};
+    [lAccent,lBg,lTxt,dAccent,dBg,dTxt,fontSel].forEach(el=>el.addEventListener("input",renderPreview));
+    renderPreview();
 
     const themes=await (await api("/api/themes")).json();
     const themeSel=h("select",{},h("option",{value:""},"(default)"),...themes.themes.map(t=>{const o=h("option",{value:t},t);if(t===themes.active)o.selected=true;return o;}));
@@ -596,7 +667,9 @@
         webmentions:{receive:wmRecv.checked,send:wmSend.checked,moderation:wmMod.checked},
         crossposting:{bluesky:{enabled:bsEnabled.checked,handle:bsHandle.value},mastodon:{enabled:mEnabled.checked,instance_url:mInst.value}},
         microblog:{ping_enabled:ping.checked}, hugo:{theme:themeSel.value},
-        appearance:{font:fontSel.value,accent_color:accent.value,background_color:bg.value,text_color:txt.value}}});
+        appearance:{font:fontSel.value,mode:modeSel.value,
+          light_accent:lAccent.value,light_background:lBg.value,light_text:lTxt.value,
+          dark_accent:dAccent.value,dark_background:dBg.value,dark_text:dTxt.value}}});
       toast.textContent="✓ Saved. Rebuilding…";
       const s=await (await api("/api/hugo/build",{method:"POST"})).json();
       toast.textContent=s.lastSuccess?"✓ Saved & rebuilt — refresh your site to see changes.":"Saved, but rebuild failed (see Backup & build below).";
@@ -611,24 +684,28 @@
         h("div",{style:"display:flex;align-items:center;gap:12px"}, avatarImg,
           h("button",{class:"btn secondary",style:"padding:8px 14px",onclick:()=>avatarFile.click()},"Upload photo"), avatarFile)),
       f("Font",fontSel),
-      h("div",{class:"field"},h("label",{},"Colours"),
-        h("div",{style:"display:flex;gap:18px;flex-wrap:wrap"},
-          h("label",{style:"display:flex;align-items:center;gap:8px;font-size:14px;color:#555"},accent,"Accent"),
-          h("label",{style:"display:flex;align-items:center;gap:8px;font-size:14px;color:#555"},bg,"Background"),
-          h("label",{style:"display:flex;align-items:center;gap:8px;font-size:14px;color:#555"},txt,"Text"))),
+      f("Light / dark mode",modeSel),
+      h("div",{class:"field"},h("label",{},"Light mode colours"),
+        h("div",{class:"colorrow"},
+          h("label",{},lAccent,"Accent"),h("label",{},lBg,"Background"),h("label",{},lTxt,"Text"))),
+      h("div",{class:"field"},h("label",{},"Dark mode colours"),
+        h("div",{class:"colorrow"},
+          h("label",{},dAccent,"Accent"),h("label",{},dBg,"Background"),h("label",{},dTxt,"Text"))),
+      h("div",{class:"field"},h("label",{},"Preview"),previewWrap),
       h("h3",{class:"sub"},"Feeds"), f("Posts per page",perPage), h("label",{class:"ck"},inclReply,"Include replies in main feed"),
       h("h3",{class:"sub"},"Webmentions"),
       h("label",{class:"ck"},wmRecv,"Receive"),h("label",{class:"ck"},wmSend,"Send"),h("label",{class:"ck"},wmMod,"Hold for moderation"),
       h("h3",{class:"sub"},"Cross-posting"),
       h("label",{class:"ck"},bsEnabled,"Bluesky enabled"),
-      f("Bluesky handle (any handle — e.g. you.bsky.social)",bsHandle),
+      bs.connected ? null : f("Bluesky handle (any handle — e.g. you.bsky.social)",bsHandle),
       h("div",{class:"field"}, bs.connected
         ? h("div",{class:"conn"+(bs.needs_reauth?" reauth":"")},
             h("span",{},bs.needs_reauth?("⚠ Reconnect needed ("+(bs.handle||"?")+")"):("✓ Connected as "+(bs.handle||"?"))),
-            bs.needs_reauth?h("button",{class:"btn secondary",onclick:()=>location.href="/oauth/bluesky/connect?handle="+encodeURIComponent(bsHandle.value||bs.handle||"")},"Reconnect"):null,
+            bs.needs_reauth?h("button",{class:"btn secondary",onclick:()=>location.href="/oauth/bluesky/connect?handle="+encodeURIComponent(bs.handle||"")},"Reconnect"):null,
             h("button",{class:"btn secondary danger",onclick:async()=>{await api("/api/oauth/bluesky/disconnect",{method:"POST"});reload();}},"Disconnect"))
         : h("button",{class:"btn secondary",onclick:()=>{const hn=(bsHandle.value||"").trim();if(!hn){toast.textContent="Enter your Bluesky handle first.";return;}location.href="/oauth/bluesky/connect?handle="+encodeURIComponent(hn);}},"Connect Bluesky")),
-      h("label",{class:"ck"},mEnabled,"Mastodon enabled"), f("Mastodon instance",mInst),
+      h("label",{class:"ck"},mEnabled,"Mastodon enabled"),
+      ma.connected ? null : f("Mastodon instance",mInst),
       h("div",{class:"field"}, ma.connected
         ? h("div",{class:"conn"+(ma.needs_reauth?" reauth":"")},
             h("span",{},ma.needs_reauth?("⚠ Reconnect needed ("+(ma.instance||"?")+")"):("✓ Connected ("+(ma.instance||"?")+")")),

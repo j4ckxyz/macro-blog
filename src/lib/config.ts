@@ -71,10 +71,14 @@ export interface MicroblogConfig {
 }
 
 export interface AppearanceConfig {
-  font: string;             // system | serif | mono | sans | rounded
-  accent_color: string;     // links / buttons
-  background_color: string;
-  text_color: string;
+  font: string;             // system | sans | serif | mono | rounded
+  mode: "auto" | "light" | "dark";
+  light_accent: string;
+  light_background: string;
+  light_text: string;
+  dark_accent: string;
+  dark_background: string;
+  dark_text: string;
 }
 
 export interface MacroblogConfig {
@@ -114,11 +118,24 @@ const DEFAULTS: MacroblogConfig = {
   microblog: { ping_enabled: false, ping_url: "https://micro.blog/ping" },
   appearance: {
     font: "system",
-    accent_color: "#111111",
-    background_color: "#ffffff",
-    text_color: "#222426",
+    mode: "auto",
+    light_accent: "#111111",
+    light_background: "#ffffff",
+    light_text: "#222426",
+    dark_accent: "#8ab4ff",
+    dark_background: "#15171a",
+    dark_text: "#e6e8eb",
   },
 };
+
+/** Migrate the older flat appearance colours (accent_color/…) to light_*. */
+function migrateAppearance(cfg: MacroblogConfig, raw: any): void {
+  const a = raw?.appearance;
+  if (!a) return;
+  if (a.light_accent === undefined && a.accent_color) cfg.appearance.light_accent = a.accent_color;
+  if (a.light_background === undefined && a.background_color) cfg.appearance.light_background = a.background_color;
+  if (a.light_text === undefined && a.text_color) cfg.appearance.light_text = a.text_color;
+}
 
 function deepMerge<T>(base: T, override: any): T {
   if (override === null || override === undefined) return base;
@@ -148,7 +165,9 @@ export function loadConfig(path: string = CONFIG_PATH): MacroblogConfig {
     return structuredClone(DEFAULTS);
   }
   const raw = parse(require("node:fs").readFileSync(path, "utf8")) || {};
-  return deepMerge(structuredClone(DEFAULTS), raw);
+  const cfg = deepMerge(structuredClone(DEFAULTS), raw);
+  migrateAppearance(cfg, raw);
+  return cfg;
 }
 
 export function getConfig(): MacroblogConfig {

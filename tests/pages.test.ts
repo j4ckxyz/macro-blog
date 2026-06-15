@@ -71,11 +71,13 @@ describe("pages admin API", () => {
     expect(cfg.appearance).toBeDefined();
     const put = await app.request("/api/config", {
       method: "PUT", headers: auth(),
-      body: JSON.stringify({ appearance: { font: "serif", accent_color: "#cc3300" } }),
+      body: JSON.stringify({ appearance: { font: "serif", mode: "dark", light_accent: "#cc3300", dark_background: "#101418" } }),
     });
     expect(put.status).toBe(200);
     const after = await put.json();
     expect(after.appearance.font).toBe("serif");
-    expect(after.appearance.accent_color).toBe("#cc3300");
+    expect(after.appearance.mode).toBe("dark");
+    expect(after.appearance.light_accent).toBe("#cc3300");
+    expect(after.appearance.dark_background).toBe("#101418");
   });
 });
