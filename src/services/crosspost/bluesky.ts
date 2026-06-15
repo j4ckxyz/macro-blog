@@ -5,6 +5,10 @@ import type { CrosspostPayload, CrosspostResult } from "./types.ts";
 import type { NormalizedTimelineItem } from "../timeline.ts";
 
 const MAX_GRAPHEMES = 300;
+// Bluesky rejects image blobs larger than this (1,000,000 bytes). The admin
+// composer downscales images on upload to stay under it; this guard gives a
+// clear error for images that arrive by other paths (e.g. Micropub clients).
+const BLUESKY_MAX_BLOB_BYTES = 1_000_000;
 
 interface BlueskySession {
   accessToken: string;
@@ -110,6 +114,12 @@ async function uploadBlob(session: BlueskySession, url: string): Promise<any> {
   const fileRes = await fetch(url);
   if (!fileRes.ok) throw new Error(`failed to fetch image ${url}`);
   const bytes = new Uint8Array(await fileRes.arrayBuffer());
+  if (bytes.byteLength > BLUESKY_MAX_BLOB_BYTES) {
+    throw new Error(
+      `image too large for Bluesky: ${bytes.byteLength} bytes > ${BLUESKY_MAX_BLOB_BYTES} limit (${url}). ` +
+        `Upload via the composer so it's downscaled, or resize the image before posting.`,
+    );
+  }
   const contentType = fileRes.headers.get("content-type") || "image/jpeg";
   const { res, nonce } = await dpopFetch(`${session.pds}/xrpc/com.atproto.repo.uploadBlob`, {
     method: "POST",

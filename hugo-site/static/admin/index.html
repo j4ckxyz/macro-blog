@@ -363,6 +363,39 @@
     ({composer,timeline:timelineView,posts:postsView,pages:pagesView,media:mediaView,mentions:mentionsView,logs:logsView,settings:settingsView}[active])(main);
   }
 
+  // Downscale/compress large images in the browser before upload. Keeps blobs
+  // well under cross-posting limits (Bluesky rejects image blobs over ~1MB) and
+  // avoids bloating storage. Non-raster formats (GIF/SVG) pass through untouched
+  // so animation/vectors are preserved; on any failure we fall back to the
+  // original file so uploads never break.
+  const IMG_MAX_DIM = 1600;        // longest edge in px
+  const IMG_TARGET_BYTES = 950000; // safely under Bluesky's 1,000,000-byte cap
+  async function prepImage(file){
+    if(!file || !file.type || !file.type.startsWith("image/")) return file;
+    if(file.type==="image/gif" || file.type==="image/svg+xml") return file;
+    let bitmap;
+    try{ bitmap = await createImageBitmap(file); }catch(e){ return file; }
+    let w = bitmap.width, h = bitmap.height;
+    const scale = Math.min(1, IMG_MAX_DIM/Math.max(w,h));
+    if(scale===1 && file.size<=IMG_TARGET_BYTES){ bitmap.close&&bitmap.close(); return file; }
+    w = Math.round(w*scale); h = Math.round(h*scale);
+    const draw=(cw,ch)=>{ const c=document.createElement("canvas"); c.width=cw; c.height=ch;
+      const ctx=c.getContext("2d"); ctx.fillStyle="#fff"; ctx.fillRect(0,0,cw,ch); ctx.drawImage(bitmap,0,0,cw,ch); return c; };
+    const toBlob=(canvas,q)=>new Promise(res=>canvas.toBlob(res,"image/jpeg",q));
+    let blob=null;
+    for(let attempt=0; attempt<6 && (w>0 && h>0); attempt++){
+      const canvas=draw(w,h);
+      let q=0.85; blob=await toBlob(canvas,q);
+      while(blob && blob.size>IMG_TARGET_BYTES && q>0.5){ q-=0.1; blob=await toBlob(canvas,q); }
+      if(blob && blob.size<=IMG_TARGET_BYTES) break;
+      w=Math.round(w*0.8); h=Math.round(h*0.8); // still too big → shrink and retry
+    }
+    bitmap.close&&bitmap.close();
+    if(!blob) return file;
+    const name=(file.name||"image").replace(/\.[^.]+$/,"")+".jpg";
+    return new File([blob], name, {type:"image/jpeg"});
+  }
+
   // Banner shown when a platform token has expired and needs reconnecting.
   function reauthBanner(platform, status){
     if(!status || !status.needs_reauth) return null;
@@ -392,7 +425,8 @@
     const tb=(icon,fn)=>h("button",{class:"tbtn",html:icon,onclick:fn});
     const fileInput=h("input",{type:"file",accept:"image/*",multiple:"true",style:"display:none",onchange:e=>upload(e.target.files)});
     async function upload(files){
-      for(const f of files){
+      for(const raw of files){
+        const f=await prepImage(raw);
         const fd=new FormData();fd.set("file",f);
         const d=await (await api("/api/media",{method:"POST",body:fd})).json();
         if(!d.url) continue;
@@ -696,7 +730,7 @@
     let avatarUrl=c.site.avatar||"";
     const avatarImg=h("img",{src:avatarUrl,alt:"",style:"width:64px;height:64px;border-radius:50%;object-fit:cover;background:#eee",onerror:"this.style.visibility='hidden'"});
     const avatarFile=h("input",{type:"file",accept:"image/*",style:"display:none",onchange:async e=>{
-      const fl=e.target.files[0]; if(!fl) return; const fd=new FormData(); fd.set("file",fl);
+      const fl=e.target.files[0]; if(!fl) return; const fd=new FormData(); fd.set("file",await prepImage(fl));
       const d=await (await api("/api/media",{method:"POST",body:fd})).json();
       if(d.url){ avatarUrl=d.url; avatarImg.src=d.url; avatarImg.style.visibility="visible"; }
     }});
