@@ -11,20 +11,41 @@
   {{ block "head" . }}{{ end }}
 </head>
 <body>
+  {{ $mb := .Site.Data.macroblog }}
+  {{ $host := "" }}{{ with $mb }}{{ $host = .host }}{{ end }}
   <header class="site-header">
     <nav class="bar">
       <a class="site-name" href="{{ .Site.BaseURL }}">{{ .Site.Title }}</a>
       <span class="nav-links">
+        {{ $navUrls := slice }}
+        {{ with $mb }}{{ range .nav }}
+          {{ $navUrls = $navUrls | append (lower (trim .url "/")) }}
+          {{ $href := .url }}
+          {{ $external := false }}
+          {{ if or (hasPrefix .url "http://") (hasPrefix .url "https://") }}
+            {{ $u := urls.Parse .url }}
+            {{ if and $host (ne $u.Host $host) }}{{ $external = true }}{{ end }}
+          {{ else if hasPrefix .url "/" }}
+            {{ $href = .url | absURL }}
+          {{ end }}
+          <a href="{{ $href }}"{{ if $external }} target="_blank" rel="noopener"{{ end }}>{{ .label }}</a>
+        {{ end }}{{ end }}
+        {{/* Back-compat: still surface show_in_nav pages not already in the configured nav. */}}
         {{ range (where .Site.RegularPages "Section" "pages").ByWeight }}
-          {{ if .Params.show_in_nav }}<a href="{{ .Permalink }}">{{ .Title }}</a>{{ end }}
+          {{ if .Params.show_in_nav }}{{ if not (in $navUrls (lower (trim .RelPermalink "/"))) }}<a href="{{ .Permalink }}">{{ .Title }}</a>{{ end }}{{ end }}
         {{ end }}
-        <a href="{{ .Site.BaseURL }}archive/">Archive</a>
-        <a href="{{ .Site.BaseURL }}photos/">Photos</a>
-        <a href="{{ .Site.BaseURL }}feed.xml">Feed</a>
+        {{ if and $mb $mb.search }}
+        <span class="nav-search">
+          <input type="search" id="mb-search" class="nav-search-input" placeholder="Search…" autocomplete="off" aria-label="Search posts" />
+          <div id="mb-search-results" class="nav-search-results" hidden></div>
+        </span>
+        {{ end }}
+        {{ with $mb }}{{ if .social }}<span class="nav-social">{{ partial "social.html" . }}</span>{{ end }}{{ end }}
         <button class="theme-toggle" type="button" onclick="window.__mbCycleTheme&&window.__mbCycleTheme()" title="Light / dark" aria-label="Toggle light or dark mode">◐</button>
       </span>
     </nav>
   </header>
+  {{ if and $mb $mb.search }}<script src="{{ "js/search.js" | absURL }}{{ with .Site.Params.theme_seconds }}?v={{ . }}{{ end }}" defer></script>{{ end }}
   <main class="content">
     {{ block "main" . }}{{ end }}
   </main>

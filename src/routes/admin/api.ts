@@ -40,6 +40,7 @@ import { HUGO_SITE } from "../../services/content.ts";
 import { readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import type { MicropubCreate, PostType } from "../../lib/micropub-parser.ts";
+import { parseImport, isoSeconds, type ImportRecord, type ImportSource } from "../../services/import.ts";
 import type { PostRow, SyndicationRow, WebmentionRow, MediaRow, SocialReplyRow } from "../../db/schema.ts";
 
 export const adminApi = new Hono();
@@ -374,6 +375,7 @@ function safeConfig() {
     media: cfg.media,
     microblog: cfg.microblog,
     appearance: cfg.appearance,
+    navigation: cfg.navigation,
   };
 }
 
@@ -493,80 +495,90 @@ adminApi.delete("/bookmarks/folders/:id", (c) => {
   return c.json({ ok: true });
 });
 
-// Helper for HTML to Markdown
-function htmlToMarkdown(html: string): string {
-  if (!html) return "";
-  let md = html;
-  md = md.replace(/<p[^>]*>([\s\S]*?)<\/p>/gi, "$1\n\n");
-  md = md.replace(/<br\s*\/?>/gi, "\n");
-  md = md.replace(/<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi, "[$2]($1)");
-  md = md.replace(/<img[^>]+src="([^"]+)"[^>]*alt="([^"]*)"[^>]*>/gi, "![$2]($1)");
-  md = md.replace(/<img[^>]+alt="([^"]*)"[^>]+src="([^"]+)"[^>]*>/gi, "![$1]($2)");
-  md = md.replace(/<img[^>]+src="([^"]+)"[^>]*>/gi, "![]($1)");
-  md = md.replace(/<(strong|b)>([\s\S]*?)<\/\1>/gi, "**$2**");
-  md = md.replace(/<(em|i)>([\s\S]*?)<\/\1>/gi, "_$2_");
-  md = md.replace(/<code>([\s\S]*?)<\/code>/gi, "`$1`");
-  md = md.replace(/<[^>]+>/g, "");
-  md = md.replace(/&amp;/g, "&")
-         .replace(/&lt;/g, "<")
-         .replace(/&gt;/g, ">")
-         .replace(/&quot;/g, '"')
-         .replace(/&#39;/g, "'");
-  return md.trim();
+// --- Content import (micro.blog, Twitter, RSS/Atom, WordPress, Instagram) ---
+const IMPORT_SOURCES: ImportSource[] = ["microblog", "twitter", "rss", "wordpress", "instagram"];
+
+/** Turn parsed import records into posts, skipping ones already present. */
+async function ingestImport(records: ImportRecord[], db = getDb()): Promise<number> {
+  let count = 0;
+  for (const r of records) {
+    const isoDate = isoSeconds(r.date);
+    // Dedupe on the original publish second — re-running an import is a no-op.
+    const exists = db.query("SELECT 1 FROM posts WHERE published_at = ?").get(isoDate);
+    if (exists) continue;
+    await createPost(
+      {
+        action: "create",
+        type: r.type,
+        content: r.content,
+        name: r.title,
+        categories: r.categories || [],
+        photos: r.photos || [],
+        status: "published",
+        published: isoDate,
+        syndicateTo: [],
+        properties: {},
+      },
+      db,
+    );
+    count++;
+  }
+  return count;
 }
 
-// --- Import from Micro.blog ---
+adminApi.post("/import", async (c) => {
+  const b = await c.req.json();
+  const source = b.source as ImportSource;
+  if (!IMPORT_SOURCES.includes(source)) {
+    return c.json({ error: `source must be one of: ${IMPORT_SOURCES.join(", ")}` }, 400);
+  }
+
+  // Obtain the raw payload: explicit content, a parsed object, or a fetched URL.
+  let raw: string | any;
+  if (b.content !== undefined) {
+    raw = b.content;
+  } else if (b.data !== undefined || b.feed !== undefined) {
+    raw = b.data ?? b.feed;
+  } else if (b.url) {
+    try {
+      const res = await fetch(b.url, { headers: { "User-Agent": "Macroblog/1.0" } });
+      if (!res.ok) return c.json({ error: `failed to fetch: ${res.status} ${res.statusText}` }, 400);
+      raw = await res.text();
+    } catch (e) {
+      return c.json({ error: `failed to fetch: ${(e as Error).message}` }, 400);
+    }
+  } else {
+    return c.json({ error: "provide one of: content, data, or url" }, 400);
+  }
+
+  let records: ImportRecord[];
+  try {
+    records = parseImport(source, raw);
+  } catch (e) {
+    return c.json({ error: `parse failed: ${(e as Error).message}` }, 400);
+  }
+
+  const imported = await ingestImport(records);
+  triggerBuild();
+  return c.json({ ok: true, source, found: records.length, imported });
+});
+
+// Back-compat alias for the original micro.blog-only endpoint.
 adminApi.post("/import/microblog", async (c) => {
   const b = await c.req.json();
-  let feed: any;
-  if (b.url) {
+  let raw: any;
+  if (b.feed !== undefined) raw = b.feed;
+  else if (b.url) {
     try {
       const res = await fetch(b.url);
       if (!res.ok) return c.json({ error: `failed to fetch feed: ${res.statusText}` }, 400);
-      feed = await res.json();
+      raw = await res.json();
     } catch (e) {
       return c.json({ error: `failed to fetch feed: ${(e as Error).message}` }, 400);
     }
-  } else if (b.feed) {
-    feed = b.feed;
-  } else {
-    return c.json({ error: "either url or feed object is required" }, 400);
-  }
+  } else return c.json({ error: "either url or feed object is required" }, 400);
 
-  const items = feed.items || [];
-  let count = 0;
-  const db = getDb();
-  for (const item of items) {
-    const date = item.date_published ? new Date(item.date_published) : new Date();
-    let title = item.title || undefined;
-    let content = htmlToMarkdown(item.content_html || item.content_text || "");
-    const isoDate = date.toISOString().replace(/\.\d{3}Z$/, "Z");
-    const exists = db.query("SELECT 1 FROM posts WHERE published_at = ?").get(isoDate);
-    if (exists) continue;
-
-    const photos: any[] = [];
-    if (item.attachments) {
-      for (const att of item.attachments) {
-        if (att.mime_type?.startsWith("image/") || att.url) {
-          photos.push({ url: att.url, alt: att.title || "" });
-        }
-      }
-    }
-
-    await createPost({
-      action: "create",
-      type: title ? "article" : (photos.length ? "photo" : "post"),
-      content,
-      name: title,
-      categories: item.tags || [],
-      photos,
-      status: "published",
-      published: isoDate,
-      syndicateTo: [],
-      properties: {},
-    }, db);
-    count++;
-  }
+  const imported = await ingestImport(parseImport("microblog", raw));
   triggerBuild();
-  return c.json({ ok: true, imported: count });
+  return c.json({ ok: true, imported });
 });

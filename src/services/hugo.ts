@@ -9,6 +9,7 @@ import { HUGO_SITE } from "./content.ts";
 
 export const PUBLIC_DIR = resolve(process.env.MACROBLOG_PUBLIC || "public");
 const WEBMENTION_DATA_DIR = join(HUGO_SITE, "data", "webmentions");
+const SITE_DATA_FILE = join(HUGO_SITE, "data", "macroblog.json");
 
 export interface BuildStatus {
   running: boolean;
@@ -69,6 +70,10 @@ async function doFullBuild(): Promise<void> {
 
     await writeWebmentionData().catch((e) => {
       console.warn("[hugo] writeWebmentionData failed:", (e as Error).message);
+    });
+
+    await writeSiteData().catch((e) => {
+      console.warn("[hugo] writeSiteData failed:", (e as Error).message);
     });
 
     const themeSeconds = String(Math.floor(Date.now() / 1000));
@@ -240,6 +245,32 @@ export async function writeWebmentionData(): Promise<void> {
   for (const [slug, mentions] of bySlug) {
     await Bun.write(join(WEBMENTION_DATA_DIR, `${slug}.json`), JSON.stringify(mentions, null, 2));
   }
+}
+
+/**
+ * Write hugo-site/data/macroblog.json from the live config so templates can
+ * render the configurable top-bar nav, social links, landing section and the
+ * public search box. Arrays/objects can't be passed through Hugo's env params,
+ * so a data file is the clean channel. Templates read `.Site.Data.macroblog`.
+ */
+export async function writeSiteData(): Promise<void> {
+  const cfg = getConfig();
+  let host = "";
+  try {
+    host = new URL(cfg.site.url).host;
+  } catch {
+    host = cfg.site.url;
+  }
+  const nav = cfg.navigation || ({} as any);
+  const data = {
+    host,
+    home_section: nav.home_section || "timeline",
+    search: nav.search !== false,
+    nav: Array.isArray(nav.items) ? nav.items.map((i: any) => ({ label: i.label || "", url: i.url || "" })) : [],
+    social: Array.isArray(nav.social) ? nav.social.map((s: any) => ({ platform: s.platform || "web", url: s.url || "" })) : [],
+  };
+  await mkdir(join(HUGO_SITE, "data"), { recursive: true });
+  await Bun.write(SITE_DATA_FILE, JSON.stringify(data, null, 2));
 }
 
 export function hugoAvailable(): boolean {

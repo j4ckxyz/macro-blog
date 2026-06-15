@@ -82,6 +82,31 @@ export interface AppearanceConfig {
   dark_text: string;
 }
 
+/** A single top-bar navigation link. */
+export interface NavItem {
+  label: string;
+  /** Absolute URL or site-relative path (e.g. "/archive/"). */
+  url: string;
+}
+
+/** A social profile link rendered as an icon. */
+export interface SocialItem {
+  /** Known platform key (mastodon, bluesky, github, twitter, instagram, rss, email, web, …). */
+  platform: string;
+  url: string;
+}
+
+export interface NavigationConfig {
+  /** Ordered top-bar links. Order in the array is the display order. */
+  items: NavItem[];
+  social: SocialItem[];
+  /** Which landing view the site root shows: "timeline" (post feed) or a
+   *  section name ("photos", "articles", …) or a page slug. */
+  home_section: string;
+  /** Whether to show the public fuzzy search box in the top bar. */
+  search: boolean;
+}
+
 export interface MacroblogConfig {
   site: SiteConfig;
   server: ServerConfig;
@@ -93,6 +118,7 @@ export interface MacroblogConfig {
   media: MediaConfig;
   microblog: MicroblogConfig;
   appearance: AppearanceConfig;
+  navigation: NavigationConfig;
 }
 
 const DEFAULTS: MacroblogConfig = {
@@ -127,6 +153,16 @@ const DEFAULTS: MacroblogConfig = {
     dark_accent: "#8ab4ff",
     dark_background: "#15171a",
     dark_text: "#e6e8eb",
+  },
+  navigation: {
+    items: [
+      { label: "Archive", url: "/archive/" },
+      { label: "Photos", url: "/photos/" },
+      { label: "Feed", url: "/feed.xml" },
+    ],
+    social: [],
+    home_section: "timeline",
+    search: true,
   },
 };
 

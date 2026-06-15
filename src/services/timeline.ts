@@ -54,6 +54,14 @@ export interface NormalizedTimelineItem {
 const MAX_ITEMS = 2000;
 
 function upsert(db: Database, item: NormalizedTimelineItem): void {
+  let normalizedCreatedAt = item.createdAt;
+  try {
+    const parsed = new Date(item.createdAt);
+    if (!isNaN(parsed.getTime())) {
+      normalizedCreatedAt = parsed.toISOString();
+    }
+  } catch (e) {}
+
   db.query(
     `INSERT INTO timeline
       (platform, remote_id, remote_cid, root_uri, root_cid, author_name, author_handle, author_avatar, author_url, content, url, media_json, reposted_by, created_at, is_reply, embed_json, fetched_at)
@@ -68,7 +76,7 @@ function upsert(db: Database, item: NormalizedTimelineItem): void {
     item.platform, item.remoteId, item.remoteCid ?? null, item.rootUri ?? null, item.rootCid ?? null,
     item.author, item.authorHandle, item.avatar,
     item.url, item.content, item.url, JSON.stringify(item.media || []),
-    item.repostedBy ?? null, item.createdAt, item.isReply ? 1 : 0,
+    item.repostedBy ?? null, normalizedCreatedAt, item.isReply ? 1 : 0,
     item.embed ? JSON.stringify(item.embed) : null,
   );
 }
@@ -146,7 +154,7 @@ export function getTimeline(limit = 100, q?: string, db: Database = getDb()): Ti
       .query("SELECT * FROM timeline ORDER BY created_at DESC LIMIT ?")
       .all(limit) as TimelineRow[];
   }
-  return rows.map((r) => ({
+  const items = rows.map((r) => ({
     id: r.id,
     platform: r.platform as "bluesky" | "mastodon",
     remoteId: r.remote_id,
@@ -164,4 +172,12 @@ export function getTimeline(limit = 100, q?: string, db: Database = getDb()): Ti
     isReply: !!r.is_reply,
     embed: r.embed_json ? JSON.parse(r.embed_json) : null,
   }));
+
+  items.sort((a, b) => {
+    const tA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const tB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return tB - tA; // newest first
+  });
+
+  return items;
 }

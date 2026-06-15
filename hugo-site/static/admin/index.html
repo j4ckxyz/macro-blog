@@ -104,6 +104,7 @@
     .tbtn:hover{background:var(--hover)}
     .count{color:var(--muted);font-size:16px;margin-left:6px}
     .count.over{color:#d33}
+    .count.thread{color:var(--accent,#3b82f6)}
     .spacer{flex:1}
     .btn{border-radius:9px;padding:10px 20px;font-size:16px;font-weight:700;border:1px solid transparent}
     .btn.secondary{background:var(--card);border-color:var(--input-border);color:var(--text)}
@@ -163,6 +164,11 @@
     .logbox{background:#0d0f12;color:#d6e2ec;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.5;padding:14px;border-radius:10px;white-space:pre-wrap;overflow:auto;max-height:70vh;word-break:break-word}
     .colorrow{display:flex;gap:18px;flex-wrap:wrap}
     .colorrow label{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--muted)}
+    .sortlist{display:flex;flex-direction:column;gap:6px;max-width:520px}
+    .sortrow{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:6px 8px}
+    .sortrow.dragging{opacity:.5;border-color:var(--blue)}
+    .drag-handle{cursor:grab;color:var(--muted);font-size:16px;user-select:none;padding:0 2px;line-height:1}
+    .drag-handle:active{cursor:grabbing}
     .theme-preview{flex:1;min-width:170px;border:1px solid var(--border);border-radius:12px;padding:14px}
     .preview{border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-top:12px}
     .preview img{max-width:100%;border-radius:8px;margin:8px 0}
@@ -178,6 +184,7 @@
     /* timeline */
     .tl-item{display:flex;gap:12px;padding:14px 10px;border-bottom:1px solid var(--line);color:var(--text);border-radius:10px;margin-bottom:8px;transition: background .15s;}
     .tl-item:hover{background:var(--hover)}
+    .tl-item.tl-selected{background:var(--hover);outline:2px solid var(--blue);outline-offset:-2px;}
     .tl-item.is-reply{border-left: 3px solid var(--blue); padding-left: 14px; background: rgba(58,111,214,0.03); margin-left: 10px;}
     .tl-avatar{width:44px;height:44px;border-radius:50%;object-fit:cover;background:var(--field);flex:0 0 44px}
     .tl-body{min-width:0;flex:1}
@@ -187,7 +194,7 @@
     .tl-handle,.tl-dot,.tl-time{color:var(--muted)}
     .tl-badge{margin-left:auto;display:inline-flex;align-items:center;}
     .tl-text{margin-top:3px;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.45}
-    .tl-media{display:grid;gap:4px;margin-top:8px;border-radius:12px;overflow:hidden;border:1px solid var(--border);height:340px;width:100%;}
+    .tl-media{display:grid;gap:3px;margin-top:10px;border-radius:16px;overflow:hidden;border:1px solid var(--border);width:100%;aspect-ratio:16/9;max-height:510px;}
     .tl-media.grid-1{grid-template-columns:1fr;grid-template-rows:1fr;}
     .tl-media.grid-2{grid-template-columns:1fr 1fr;grid-template-rows:1fr;}
     .tl-media.grid-3{grid-template-columns:1.2fr 1fr;grid-template-rows:1fr 1fr;}
@@ -466,7 +473,43 @@
   const VIEW2SLUG={composer:"",timeline:"timeline",posts:"posts",pages:"pages",mentions:"mentions",media:"uploads",logs:"logs",settings:"settings"};
   const SLUG2VIEW={"":"composer",timeline:"timeline",posts:"posts",pages:"pages",mentions:"mentions",uploads:"media",logs:"logs",settings:"settings"};
   function viewFromPath(){ const m=location.pathname.match(/\/admin\/?(.*)$/); const slug=((m&&m[1])||"").replace(/\/+$/,""); return SLUG2VIEW[slug]||"composer"; }
-  function navigate(id){ active=id; const slug=VIEW2SLUG[id]||""; const path="/admin"+(slug?"/"+slug:"/"); if(location.pathname!==path){ try{history.pushState({id},"",path);}catch(e){} } renderApp(); window.scrollTo(0,0); }
+  function navigate(id){ active=id; tlSelectedIndex=-1; const slug=VIEW2SLUG[id]||""; const path="/admin"+(slug?"/"+slug:"/"); if(location.pathname!==path){ try{history.pushState({id},"",path);}catch(e){} } renderApp(); window.scrollTo(0,0); }
+
+  /* ---------------- keyboard shortcuts ---------------- */
+  // Sidebar order for number keys 1-7.
+  const KB_NAV = ["timeline","posts","pages","mentions","media","logs","settings"];
+  let tlSelectedIndex = -1;
+  function tlItems(){ return Array.from(document.querySelectorAll(".tl-item")); }
+  function tlSelect(i){
+    const items = tlItems();
+    if(!items.length){ tlSelectedIndex=-1; return; }
+    tlSelectedIndex = Math.max(0, Math.min(i, items.length-1));
+    items.forEach((el,idx)=>el.classList.toggle("tl-selected", idx===tlSelectedIndex));
+    items[tlSelectedIndex].scrollIntoView({block:"center",behavior:"smooth"});
+  }
+  function isTypingTarget(el){
+    if(!el) return false;
+    const t = el.tagName;
+    return t==="INPUT"||t==="TEXTAREA"||t==="SELECT"||el.isContentEditable;
+  }
+  function handleGlobalKey(e){
+    if(e.metaKey||e.ctrlKey||e.altKey) return;
+    if(isTypingTarget(e.target)){ if(e.key==="Escape") e.target.blur(); return; }
+    const k = e.key;
+    if(k>="1"&&k<="7"){ e.preventDefault(); navigate(KB_NAV[+k-1]); return; }
+    if(k==="n"){ e.preventDefault(); editingPostSlug=null; navigate("composer"); return; }
+    if(active!=="timeline") return;
+    if(k==="j"){ e.preventDefault(); tlSelect(tlSelectedIndex<0?0:tlSelectedIndex+1); return; }
+    if(k==="k"){ e.preventDefault(); tlSelect(tlSelectedIndex<=0?0:tlSelectedIndex-1); return; }
+    if(k==="r"){
+      e.preventDefault();
+      if(tlSelectedIndex<0) tlSelect(0);
+      const el = tlItems()[tlSelectedIndex];
+      if(el){ const btn = el.querySelector(".tl-reply-btn"); if(btn) btn.click(); }
+      return;
+    }
+  }
+  if(!window.mbKbInit){ window.mbKbInit=true; document.addEventListener("keydown", handleGlobalKey); }
   window.addEventListener("popstate",()=>{ if(!token)return; active=viewFromPath(); renderApp(); });
 
   async function api(path, opts={}){
@@ -535,8 +578,7 @@
       h("button",{class:"newpost",onclick:()=>{editingPostSlug=null;go("composer");}}, h("span",{class:"ic",html:ICON.pencil}), "New Post"),
       h("div",{class:"account"},
         h("img",{class:"avatar",src:(cfg.site.avatar||""),alt:"",onerror:"this.style.visibility='hidden'"}),
-        h("span",{class:"handle"},"@"+(cfg.site.username||"me")),
-        h("span",{class:"chev",html:ICON.chev})),
+        h("span",{class:"handle"},"@"+(cfg.site.username||"me"))),
       h("nav",{class:"nav"},
         navItem("timeline",ICON.home,"Timeline"),
         navItem("posts",ICON.posts,"Posts"),
@@ -585,6 +627,50 @@
     return [...plain].length;
   }
 
+  // Rough client-side mirror of the server thread splitter (services/crosspost/thread.ts).
+  // Bluesky has the tightest per-post limit, so estimate against it to show how many
+  // posts a long body will thread into. Returns the estimated number of parts.
+  function estimateThreadParts(md, limit) {
+    if (!md || !md.trim()) return 1;
+    // Build blocks: fenced code blocks stay whole; text is split on blank lines.
+    const blocks = [];
+    const segments = md.split(/(```[\s\S]*?```)/g);
+    for (const seg of segments) {
+      if (!seg) continue;
+      if (seg.startsWith("```")) {
+        blocks.push(seg.trim());
+      } else {
+        for (const p of seg.split(/\n\n+/)) {
+          if (p.trim()) blocks.push(p.trim());
+        }
+      }
+    }
+    const len = (s) => [...s].length;
+    let parts = 0;
+    let current = "";
+    const flush = () => { if (current.trim()) { parts++; current = ""; } };
+    const add = (t) => { current = current ? current + "\n\n" + t : t; };
+    for (const block of blocks) {
+      const candidate = current ? current + "\n\n" + block : block;
+      if (len(candidate) <= limit) { add(block); continue; }
+      if (len(block) <= limit) { flush(); add(block); continue; }
+      // Block alone exceeds the limit: split into sentences, then characters.
+      flush();
+      const sentences = block.match(/[^.!?]+[.!?]+(?=\s|$)|[^.!?]+$/g) || [block];
+      for (const s of sentences) {
+        const sentence = s.trim();
+        if (!sentence) continue;
+        const cand = current ? current + "\n\n" + sentence : sentence;
+        if (len(cand) <= limit) { add(sentence); continue; }
+        flush();
+        if (len(sentence) <= limit) { add(sentence); continue; }
+        parts += Math.ceil(len(sentence) / limit);
+      }
+    }
+    flush();
+    return Math.max(1, parts);
+  }
+
   /* ---------------- composer ---------------- */
   function composer(view){
     let type="post";
@@ -601,7 +687,19 @@
     let linkBack = true;
     let selectedFolder = "";
 
-    editor.addEventListener("input",()=>{const n=getPlainTextLength(editor.value);count.textContent=n+"/300";count.classList.toggle("over",n>300);});
+    const THREAD_LIMIT=280;
+    editor.addEventListener("input",()=>{
+      const n=getPlainTextLength(editor.value);
+      if(n>THREAD_LIMIT){
+        const parts=estimateThreadParts(editor.value,THREAD_LIMIT);
+        count.textContent=n+" · "+parts+" posts";
+        count.classList.remove("over");
+        count.classList.add("thread");
+      }else{
+        count.textContent=n+"/300";
+        count.classList.remove("over","thread");
+      }
+    });
 
     const wrap=(d)=>{const s=editor.selectionStart,e=editor.selectionEnd,v=editor.value;editor.value=v.slice(0,s)+d+v.slice(s,e)+d+v.slice(e);editor.focus();editor.dispatchEvent(new Event("input"));};
     const tb=(icon,fn)=>h("button",{class:"tbtn",html:icon,onclick:fn});
@@ -870,7 +968,7 @@
           editingPostSlug = null;
           setTimeout(() => navigate("posts"), 1000);
         } else {
-          editor.value="";title.value="";tags.value="";photos.length=0;photoList.innerHTML="";count.textContent="0/300";menu.style.display="none";
+          editor.value="";title.value="";tags.value="";photos.length=0;photoList.innerHTML="";count.textContent="0/300";count.classList.remove("over","thread");menu.style.display="none";
           postLang.value = (cfg && cfg.site && cfg.site.language) || "en";
         }
       }
@@ -1107,18 +1205,50 @@
     view.append(listContainer);
 
     let data = null;
-    const debounceLoad = debounce(loadTimelineData, 300);
+    let timelineLimit = 50;
+    const debounceLoad = debounce(() => {
+      timelineLimit = 50;
+      loadTimelineData();
+    }, 300);
 
     async function loadTimelineData() {
       listContainer.innerHTML = "Loading…";
       try {
-        const queryStr = timelineSearchQuery ? "?q=" + encodeURIComponent(timelineSearchQuery) : "";
+        const queryStr = (timelineSearchQuery ? "?q=" + encodeURIComponent(timelineSearchQuery) : "?") + "&limit=" + timelineLimit;
         data = await (await api("/api/timeline" + queryStr)).json();
         renderTimelineList();
       } catch (e) {
         listContainer.innerHTML = "Error loading timeline.";
       }
     }
+
+    let loadingMore = false;
+    const scrollHandler = async () => {
+      if (active !== "timeline") return;
+      if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 200) {
+        if (loadingMore) return;
+        loadingMore = true;
+        timelineLimit += 50;
+        const spinner = h("div", { style: "text-align:center;color:var(--muted);padding:15px;" }, "Loading more posts…");
+        listContainer.append(spinner);
+        try {
+          const queryStr = (timelineSearchQuery ? "?q=" + encodeURIComponent(timelineSearchQuery) : "?") + "&limit=" + timelineLimit;
+          const res = await (await api("/api/timeline" + queryStr)).json();
+          data = res;
+          renderTimelineList();
+        } catch (e) {
+          console.error("Error loading more posts:", e);
+        } finally {
+          loadingMore = false;
+        }
+      }
+    };
+
+    if (window.mbScrollListener) {
+      window.removeEventListener("scroll", window.mbScrollListener);
+    }
+    window.mbScrollListener = scrollHandler;
+    window.addEventListener("scroll", scrollHandler);
 
     function renderTimelineList() {
       listContainer.innerHTML = "";
@@ -1284,7 +1414,7 @@
           bookmarkStatus
         );
 
-        const replyBtn = h("button",{class:"btn secondary",style:"padding:5px 10px;font-size:13px;display:flex;align-items:center;gap:4px;",onclick:()=>{
+        const replyBtn = h("button",{class:"btn secondary tl-reply-btn",style:"padding:5px 10px;font-size:13px;display:flex;align-items:center;gap:4px;",onclick:()=>{
           replyOpen = !replyOpen;
           replyRow.style.display = replyOpen ? "block" : "none";
           if (replyOpen) replyBox.focus();
@@ -1486,6 +1616,74 @@
     const bs=await (await api("/api/oauth/bluesky")).json();
     const ma=await (await api("/api/oauth/mastodon")).json();
 
+    // --- Navigation, social links, home section, search ---
+    const navCfg = c.navigation || {items:[],social:[],home_section:"timeline",search:true};
+    const navListEl = h("div",{class:"sortlist"});
+    const socialListEl = h("div",{class:"sortlist"});
+    const SOCIAL_PLATFORMS = ["bluesky","mastodon","github","twitter","instagram","rss","email","web"];
+
+    function makeSortable(container){
+      let dragRow=null;
+      container.addEventListener("dragover", e=>{
+        e.preventDefault();
+        if(!dragRow) return;
+        const rows=[...container.querySelectorAll(".sortrow:not(.dragging)")];
+        const after=rows.find(r=>{const box=r.getBoundingClientRect();return e.clientY < box.top + box.height/2;});
+        if(after) container.insertBefore(dragRow, after); else container.appendChild(dragRow);
+      });
+      container._bindRow=(row)=>{
+        row.draggable=true;
+        row.addEventListener("dragstart",()=>{dragRow=row;row.classList.add("dragging");});
+        row.addEventListener("dragend",()=>{row.classList.remove("dragging");dragRow=null;});
+      };
+    }
+    makeSortable(navListEl); makeSortable(socialListEl);
+
+    function navRow(item){
+      const label=h("input",{type:"text",class:"nav-label",value:item.label||"",placeholder:"Label",style:"flex:1;min-width:90px;border:1px solid var(--input-border);border-radius:7px;padding:7px 9px;font-size:13px"});
+      const url=h("input",{type:"text",class:"nav-url",value:item.url||"",placeholder:"/archive/ or https://…",style:"flex:2;min-width:120px;border:1px solid var(--input-border);border-radius:7px;padding:7px 9px;font-size:13px"});
+      const row=h("div",{class:"sortrow"},
+        h("span",{class:"drag-handle",title:"Drag to reorder"},"⠿"),
+        label,url,
+        h("button",{class:"btn secondary danger",style:"padding:5px 9px;font-size:13px",onclick:e=>{e.preventDefault();row.remove();}},"✕"));
+      navListEl._bindRow(row);
+      return row;
+    }
+    function socialRow(item){
+      const sel=h("select",{class:"social-platform",style:"border:1px solid var(--input-border);border-radius:7px;padding:7px 9px;font-size:13px"},
+        ...SOCIAL_PLATFORMS.map(p=>{const o=h("option",{value:p},p);if(p===item.platform)o.selected=true;return o;}));
+      const url=h("input",{type:"text",class:"social-url",value:item.url||"",placeholder:"https://… (or mailto:)",style:"flex:2;min-width:120px;border:1px solid var(--input-border);border-radius:7px;padding:7px 9px;font-size:13px"});
+      const row=h("div",{class:"sortrow"},
+        h("span",{class:"drag-handle",title:"Drag to reorder"},"⠿"),
+        sel,url,
+        h("button",{class:"btn secondary danger",style:"padding:5px 9px;font-size:13px",onclick:e=>{e.preventDefault();row.remove();}},"✕"));
+      socialListEl._bindRow(row);
+      return row;
+    }
+    (navCfg.items||[]).forEach(it=>navListEl.append(navRow(it)));
+    (navCfg.social||[]).forEach(it=>socialListEl.append(socialRow(it)));
+
+    const homeSel=h("select",{},...[["timeline","Timeline (all posts)"],["posts","Notes only"],["articles","Articles only"],["photos","Photos only"],["bookmarks","Bookmarks only"],["podcasts","Podcasts only"]].map(([v,l])=>{const o=h("option",{value:v},l);if(v===(navCfg.home_section||"timeline"))o.selected=true;return o;}));
+    const searchChk=chk(navCfg.search!==false);
+
+    const navSection=h("div",{},
+      h("h3",{class:"sub"},"Navigation & links"),
+      h("p",{class:"hint",style:"color:var(--muted);font-size:13px;margin:0 0 8px"},"Top-bar links, in order. Drag the ⠿ handle to reorder. Site-relative paths (e.g. /archive/) and links to your own domain stay in the same tab; external links open in a new tab."),
+      navListEl,
+      h("button",{class:"btn secondary",style:"padding:6px 12px;font-size:13px;margin-top:6px",onclick:e=>{e.preventDefault();navListEl.append(navRow({label:"",url:""}));}},"+ Add link"),
+      h("h3",{class:"sub"},"Social links"),
+      socialListEl,
+      h("button",{class:"btn secondary",style:"padding:6px 12px;font-size:13px;margin-top:6px",onclick:e=>{e.preventDefault();socialListEl.append(socialRow({platform:"web",url:""}));}},"+ Add social link"),
+      f("Home page (what visitors land on)",homeSel),
+      h("label",{class:"ck"},searchChk,"Show search box in the site nav"));
+
+    const collectNav=()=>({
+      items:[...navListEl.querySelectorAll(".sortrow")].map(r=>({label:r.querySelector(".nav-label").value.trim(),url:r.querySelector(".nav-url").value.trim()})).filter(i=>i.label&&i.url),
+      social:[...socialListEl.querySelectorAll(".sortrow")].map(r=>({platform:r.querySelector(".social-platform").value,url:r.querySelector(".social-url").value.trim()})).filter(s=>s.url),
+      home_section:homeSel.value,
+      search:searchChk.checked,
+    });
+
     const save=async()=>{
       await api("/api/config",{method:"PUT",json:{
         site:{title:title.value,description:desc.value,author:author.value,username:username.value,url:url.value,avatar:avatarUrl,banner:bannerUrl,language:language.value},
@@ -1495,62 +1693,72 @@
         microblog:{ping_enabled:ping.checked}, hugo:{theme:themeSel.value},
         appearance:{font:fontSel.value,mode:modeSel.value,
           light_accent:lAccent.value,light_background:lBg.value,light_text:lTxt.value,
-          dark_accent:dAccent.value,dark_background:dBg.value,dark_text:dTxt.value}}});
+          dark_accent:dAccent.value,dark_background:dBg.value,dark_text:dTxt.value},
+        navigation:collectNav()}});
       toast.textContent="✓ Saved. Rebuilding…";
       const s=await (await api("/api/hugo/build",{method:"POST"})).json();
       toast.textContent=s.lastSuccess?"✓ Saved & rebuilt — refresh your site to see changes.":"Saved, but rebuild failed (see Backup & build below).";
     };
     const reload=()=>{view.innerHTML="";settingsView(view);};
 
-    const importUrlInput = h("input",{type:"text",placeholder:"https://username.micro.blog/feed.json",style:"width:100%;border:1px solid var(--input-border);border-radius:8px;padding:9px 11px;font-size:14px;"});
-    const importFileInput = h("input",{type:"file",accept:".json",style:"display:none",onchange:async e=>{
-      const file = e.target.files[0];
-      if (!file) return;
+    // Per-source metadata: which input modes apply, file accept filter, hints.
+    const IMPORT_SOURCES = {
+      microblog: {label:"Micro.blog (JSON Feed)", url:"https://username.micro.blog/feed.json", accept:".json", file:"feed.json / export.json", urlMode:true},
+      rss:       {label:"RSS / Atom feed", url:"https://example.com/feed.xml", accept:".xml,.rss,.atom", file:"feed.xml / atom.xml", urlMode:true},
+      twitter:   {label:"Twitter / X archive", url:"", accept:".js,.json", file:"tweets.js (from your X data export)", urlMode:false},
+      wordpress: {label:"WordPress (WXR)", url:"", accept:".xml,.wxr", file:"WordPress eXtended RSS .xml", urlMode:false},
+      instagram: {label:"Instagram archive", url:"", accept:".json", file:"posts_1.json (from your IG data export)", urlMode:false},
+    };
+    const importSourceSel = h("select",{},...Object.entries(IMPORT_SOURCES).map(([v,m])=>h("option",{value:v},m.label)));
+    const importUrlInput = h("input",{type:"text",placeholder:IMPORT_SOURCES.microblog.url,style:"width:100%;border:1px solid var(--input-border);border-radius:8px;padding:9px 11px;font-size:14px;"});
+    const importUrlRow = h("div",{class:"field"},h("label",{},"Feed URL"),
+      h("div",{style:"display:flex;gap:8px"}, importUrlInput,
+        h("button",{class:"btn secondary",style:"padding:8px 14px",onclick:()=>runImport({url:importUrlInput.value.trim()})},"Import")));
+    const importFileHint = h("label",{},"Or upload "+IMPORT_SOURCES.microblog.file);
+    const importFileInput = h("input",{type:"file",style:"display:none"});
+    const importFileBtn = h("button",{class:"btn secondary",style:"padding:8px 14px",onclick:()=>importFileInput.click()},"Choose file & import");
+
+    async function runImport(payload){
+      const source = importSourceSel.value;
+      toast.textContent = "Importing…";
+      const r = await api("/api/import",{method:"POST",json:{source,...payload}});
+      if (r.ok) {
+        const res = await r.json();
+        toast.textContent = `✓ Imported ${res.imported} of ${res.found} ${source} posts. Rebuilding site…`;
+        await api("/api/hugo/build",{method:"POST"});
+        toast.textContent = `✓ Imported ${res.imported} posts & rebuilt site.`;
+      } else {
+        toast.textContent = "✗ Import failed: " + (await r.text());
+      }
+    }
+
+    importFileInput.addEventListener("change", e=>{
+      const file = e.target.files[0]; if(!file) return;
       toast.textContent = "Reading file…";
       const reader = new FileReader();
-      reader.onload = async evt => {
-        try {
-          const feed = JSON.parse(evt.target.result);
-          toast.textContent = "Importing…";
-          const r = await api("/api/import/microblog", {method:"POST", json:{feed}});
-          if (r.ok) {
-            const res = await r.json();
-            toast.textContent = `✓ Imported ${res.imported} posts successfully. Rebuilding site…`;
-            await api("/api/hugo/build",{method:"POST"});
-            toast.textContent = `✓ Imported ${res.imported} posts & rebuilt site.`;
-          } else {
-            toast.textContent = "✗ Import failed: " + (await r.text());
-          }
-        } catch(err) {
-          toast.textContent = "✗ Invalid JSON file: " + err.message;
-        }
-      };
+      reader.onload = evt => runImport({content: evt.target.result});
+      reader.onerror = () => { toast.textContent = "✗ Could not read file."; };
       reader.readAsText(file);
-    }});
+      importFileInput.value = "";
+    });
+
+    const syncImportMode = ()=>{
+      const m = IMPORT_SOURCES[importSourceSel.value];
+      importUrlInput.placeholder = m.url;
+      importUrlRow.style.display = m.urlMode ? "" : "none";
+      importFileHint.textContent = (m.urlMode ? "Or upload " : "Upload ") + m.file;
+      importFileInput.accept = m.accept;
+    };
+    importSourceSel.addEventListener("change", syncImportMode);
+    syncImportMode();
 
     const importSection = h("div",{},
-      h("h3",{class:"sub"},"Import from Micro.blog"),
-      h("div",{class:"field"},h("label",{},"JSON Feed URL"),
-        h("div",{style:"display:flex;gap:8px"},
-          importUrlInput,
-          h("button",{class:"btn secondary",style:"padding:8px 14px",onclick:async()=>{
-            const url = importUrlInput.value.trim();
-            if (!url) { toast.textContent = "Please enter a valid feed URL."; return; }
-            toast.textContent = "Importing…";
-            const r = await api("/api/import/microblog", {method:"POST", json:{url}});
-            if (r.ok) {
-              const res = await r.json();
-              toast.textContent = `✓ Imported ${res.imported} posts successfully. Rebuilding site…`;
-              await api("/api/hugo/build",{method:"POST"});
-              toast.textContent = `✓ Imported ${res.imported} posts & rebuilt site.`;
-            } else {
-              toast.textContent = "✗ Import failed: " + (await r.text());
-            }
-          }}, "Import"))),
-      h("div",{class:"field"},h("label",{},"Or upload export.json / feed.json"),
-        h("div",{style:"display:flex;gap:8px;align-items:center;"},
-          h("button",{class:"btn secondary",style:"padding:8px 14px",onclick:()=>importFileInput.click()},"Upload & import"),
-          importFileInput))
+      h("h3",{class:"sub"},"Import content"),
+      h("p",{class:"hint",style:"color:var(--muted);font-size:13px;margin:0 0 8px"},"Original publication dates are preserved, and re-running an import skips posts already present."),
+      f("Source", importSourceSel),
+      importUrlRow,
+      h("div",{class:"field"}, importFileHint,
+        h("div",{style:"display:flex;gap:8px;align-items:center;"}, importFileBtn, importFileInput))
     );
 
     view.append(h("h2",{class:"section"},"Settings"),
@@ -1572,6 +1780,7 @@
         h("div",{class:"colorrow"},
           h("label",{},dAccent,"Accent"),h("label",{},dBg,"Background"),h("label",{},dTxt,"Text"))),
       h("div",{class:"field"},h("label",{},"Preview"),previewWrap),
+      navSection,
       h("h3",{class:"sub"},"Feeds"), f("Posts per page",perPage), h("label",{class:"ck"},inclReply,"Include replies in main feed"),
       h("h3",{class:"sub"},"Webmentions"),
       h("label",{class:"ck"},wmRecv,"Receive"),h("label",{class:"ck"},wmSend,"Send"),h("label",{class:"ck"},wmMod,"Hold for moderation"),

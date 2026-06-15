@@ -40,7 +40,7 @@ summaryLength = 30
   podcasts = "/:year/:month/:day/:contentbasename/"
 
 [outputs]
-  home = ["HTML", "RSS", "JSON"]
+  home = ["HTML", "RSS", "JSON", "SEARCH"]
   section = ["HTML", "RSS"]
   page = ["HTML"]
 
@@ -54,6 +54,12 @@ summaryLength = 30
     mediaType = "application/rss+xml"
     baseName = "feed"
     rel = "alternate"
+  # Lightweight client-side fuzzy search index (all posts, plain text).
+  [outputFormats.SEARCH]
+    mediaType = "application/json"
+    baseName = "search-index"
+    isPlainText = true
+    notAlternative = true
 
 [markup]
   [markup.goldmark.renderer]
