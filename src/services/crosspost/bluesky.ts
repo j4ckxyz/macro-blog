@@ -746,7 +746,9 @@ export async function fetchBlueskyMentions(limit = 40): Promise<NormalizedMentio
     limit: String(limit),
   });
   const notifs = (result?.notifications ?? []).filter((n: any) =>
-    ["mention", "reply", "quote"].includes(n.reason),
+    ["mention", "reply", "quote"].includes(n.reason) &&
+    // Never surface our own replies/mentions to our own threads in the inbox.
+    n.author?.did !== session.did,
   );
   if (!notifs.length) return [];
 
@@ -802,5 +804,10 @@ export async function fetchBlueskyReplies(
   });
   const post = result?.thread?.post;
   const root = post ? { uri: post.uri, cid: post.cid } : null;
-  return { root, replies: result?.thread?.replies ?? [] };
+  // Drop replies we authored ourselves — replying to our own post from our own
+  // account should never land in the Mentions inbox.
+  const replies = (result?.thread?.replies ?? []).filter(
+    (r: any) => r?.post?.author?.did !== session.did,
+  );
+  return { root, replies };
 }

@@ -11,6 +11,23 @@ export const PUBLIC_DIR = resolve(process.env.MACROBLOG_PUBLIC || "public");
 const WEBMENTION_DATA_DIR = join(HUGO_SITE, "data", "webmentions");
 const SITE_DATA_FILE = join(HUGO_SITE, "data", "macroblog.json");
 
+/**
+ * Extract the CSS font-family name from a Google Fonts URL such as
+ * `https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap`.
+ * Returns "" when the URL is empty or unparseable.
+ */
+export function googleFontFamily(url: string | undefined | null): string {
+  if (!url) return "";
+  try {
+    const fam = new URL(url).searchParams.get("family");
+    if (!fam) return "";
+    // "Inter:wght@400;700" → "Inter"; "+" encodes spaces in family names.
+    return fam.split(":")[0].replace(/\+/g, " ").trim();
+  } catch {
+    return "";
+  }
+}
+
 export interface BuildStatus {
   running: boolean;
   lastRun: string | null;
@@ -108,6 +125,12 @@ async function doFullBuild(): Promise<void> {
           HUGO_PARAMS_APPEARANCE_DARKACCENT: cfg.appearance.dark_accent,
           HUGO_PARAMS_APPEARANCE_DARKBG: cfg.appearance.dark_background,
           HUGO_PARAMS_APPEARANCE_DARKTEXT: cfg.appearance.dark_text,
+          // Optional custom Google Fonts (heading + body), plus the family name
+          // parsed from each URL so the template can apply it without parsing.
+          HUGO_PARAMS_APPEARANCE_HEADINGFONTURL: cfg.appearance.heading_font_url || "",
+          HUGO_PARAMS_APPEARANCE_HEADINGFONTFAMILY: googleFontFamily(cfg.appearance.heading_font_url),
+          HUGO_PARAMS_APPEARANCE_BODYFONTURL: cfg.appearance.body_font_url || "",
+          HUGO_PARAMS_APPEARANCE_BODYFONTFAMILY: googleFontFamily(cfg.appearance.body_font_url),
         },
         stdout: "pipe",
         stderr: "pipe",
@@ -266,6 +289,8 @@ export async function writeSiteData(): Promise<void> {
     host,
     home_section: nav.home_section || "timeline",
     search: nav.search !== false,
+    // Only advertise the (deprecated) webmention endpoint when still enabled.
+    webmention: cfg.webmentions?.receive === true,
     nav: Array.isArray(nav.items) ? nav.items.map((i: any) => ({ label: i.label || "", url: i.url || "" })) : [],
     social: Array.isArray(nav.social) ? nav.social.map((s: any) => ({ platform: s.platform || "web", url: s.url || "" })) : [],
   };

@@ -9,7 +9,7 @@
   {{ end }}
 
   {{ with .Params.bookmark_url }}
-  <p class="bookmark-context">🔖 <a class="u-bookmark-of" href="{{ . }}">{{ with $.Params.bookmark_title }}{{ . }}{{ else }}{{ . }}{{ end }}</a></p>
+  <p class="bookmark-context">Bookmark: <a class="u-bookmark-of" href="{{ . }}">{{ with $.Params.bookmark_title }}{{ . }}{{ else }}{{ . }}{{ end }}</a></p>
   {{ end }}
 
   <div class="e-content">

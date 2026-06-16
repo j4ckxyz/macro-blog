@@ -505,11 +505,26 @@ const IMPORT_SOURCES: ImportSource[] = ["microblog", "twitter", "rss", "wordpres
 /** Turn parsed import records into posts, skipping ones already present. */
 async function ingestImport(records: ImportRecord[], db = getDb()): Promise<number> {
   let count = 0;
+  const nowMs = Date.now();
   for (const r of records) {
-    const isoDate = isoSeconds(r.date);
+    const origIso = isoSeconds(r.date);
     // Dedupe on the original publish second — re-running an import is a no-op.
-    const exists = db.query("SELECT 1 FROM posts WHERE published_at = ?").get(isoDate);
+    // published_at is stored with millisecond precision, so compare on the
+    // second prefix (otherwise "…00Z" never equals the stored "…00.000Z").
+    const exists = db
+      .query("SELECT 1 FROM posts WHERE substr(published_at,1,19) = substr(?,1,19)")
+      .get(origIso);
     if (exists) continue;
+    // Imported content is historical, so it must never be treated as
+    // *scheduled*. A record whose date parses into the future (a source/parser
+    // artefact, e.g. seconds-vs-milliseconds) would otherwise be written with a
+    // future date — and Hugo's default buildFuture=false silently drops such
+    // pages from the whole site, including the archive. Clamp future → now so
+    // the post is published and visible.
+    const published =
+      new Date(origIso).getTime() > nowMs
+        ? isoSeconds(new Date(nowMs).toISOString())
+        : origIso;
     await createPost(
       {
         action: "create",
@@ -519,7 +534,7 @@ async function ingestImport(records: ImportRecord[], db = getDb()): Promise<numb
         categories: r.categories || [],
         photos: r.photos || [],
         status: "published",
-        published: isoDate,
+        published,
         syndicateTo: [],
         properties: {},
       },

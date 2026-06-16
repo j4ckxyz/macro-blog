@@ -13,14 +13,15 @@ native ActivityPub — Fediverse reach comes entirely from Mastodon cross-postin
 ## Highlights
 
 - **Micropub** server — post from the Micro.blog apps, iA Writer, MarsEdit, Quill, etc.
-- **IndieAuth** — sign in to clients with your own domain (PKCE, bearer tokens).
-- **Webmentions** — receive (with moderation) and send, with endpoint discovery.
+- **IndieAuth** — sign in to clients with your own domain (PKCE, bearer tokens), with
+  modern metadata discovery and CORS so browser-based and mobile writing clients just work.
 - **JSON Feed 1.1 + RSS + microformats2** — importable into / followable from Micro.blog.
 - **Cross-posting** to Bluesky (ATProto OAuth, DPoP, **least-privilege scopes**) and Mastodon/GoToSocial.
 - **Following timeline** — your Bluesky + Mastodon home feeds, merged and cached server-side so they load instantly.
-- **Unified Mentions** — read and reply to Bluesky + Mastodon replies in one place.
-- **Mobile-friendly admin** — responsive composer, browsing, and a native-style bottom tab bar.
-- **Customisable look** — pick a font, set accent/background/text colours, and upload a profile photo from Settings → Appearance (no theme editing).
+- **Unified Mentions** — read and reply to Bluesky + Mastodon replies in one place (your own self-replies are never shown).
+- **Mobile-first** — responsive public site and admin (composer, browsing, native-style bottom tab bar) so you can write and publish from your phone.
+- **Customisable look** — pick a built-in font **or paste a Google Fonts URL** for the heading and body separately, set accent/background/text colours, and upload a profile photo from Settings → Appearance (no theme editing).
+- **Webmentions** *(deprecated)* — still supported but off by default.
 - **Custom pages** — create standalone pages (e.g. `/about/`) and toggle them into the site nav, all from the admin.
 - **Theme-compatible** — drop a Micro.blog Hugo theme into `hugo-site/themes/` and it just works.
 - **Web admin** — compose, manage posts/media/mentions, connect accounts, change settings, back up — all from the browser.
@@ -180,7 +181,7 @@ exposed or writable through the web API.
 | `auth` | `password_hash` | Set via `--set-password`. |
 | `crossposting.bluesky` | `enabled`, `handle`, `pds_url`, `scope` | Bluesky cross-posting. |
 | `crossposting.mastodon` | `enabled`, `instance_url` | Mastodon/GoToSocial cross-posting. |
-| `webmentions` | `receive`, `send`, `moderation` | Incoming/outgoing webmentions. |
+| `webmentions` | `receive`, `send`, `moderation` | Incoming/outgoing webmentions (**deprecated, off by default**). |
 | `feeds` | `posts_per_page`, `include_reply_type` | Feed/listing behaviour. |
 | `microblog` | `ping_enabled`, `ping_url` | Optionally ping Micro.blog on publish. |
 
@@ -238,10 +239,11 @@ behaves consistently.
 
 The web admin's **Mentions** tab unifies everything in one inbox:
 
-- **Webmentions** — approve/reject incoming mentions (moderation optional).
-- **Bluesky & Mastodon replies** — fetched on a 15-minute poll (or **Poll replies**
-  on demand) and **answerable inline** — type a reply and it's posted back to the
-  right thread on the right platform.
+- **Bluesky & Mastodon replies and @-mentions** — fetched on a 15-minute poll (or
+  **Poll replies** on demand) and **answerable inline** — type a reply and it's posted
+  back to the right thread on the right platform. Replies you make to your **own** posts
+  from your own connected account are filtered out, so the inbox only shows other people.
+- **Webmentions** *(deprecated)* — approve/reject incoming mentions when enabled.
 
 ---
 
@@ -266,7 +268,35 @@ and `update`/`delete`.
 
 `/admin/` gives you a composer (note / article / photo / bookmark, drag-and-drop
 photos, tags, scheduling, cross-post toggles), a posts list, a media library,
-the Mentions inbox, and full Settings.
+the Mentions inbox, and full Settings. The whole admin is mobile-first, so you can
+write and publish from a phone — the composer's actions and a bottom tab bar are
+built for touch.
+
+---
+
+## Open API (works with existing tools)
+
+Because Macroblog is self-hosted and standards-based, it's meant to be **open and
+compatible** with the existing IndieWeb / Micropub ecosystem rather than a closed
+silo. The heavy lifting (cross-posting, thread-splitting, media) happens on the
+backend, so clients only need to speak Micropub.
+
+Endpoints, all discoverable from your home page's `<link>` tags (and from
+`/.well-known/oauth-authorization-server`):
+
+| Endpoint | Purpose |
+|---|---|
+| `/.well-known/oauth-authorization-server` | IndieAuth / OAuth 2.0 **metadata** (`rel="indieauth-metadata"`) — modern clients auto-configure from this. |
+| `/indieauth/auth` | Authorization endpoint (PKCE). |
+| `/indieauth/token` | Token endpoint — exchange a code for a bearer token. |
+| `/micropub` | Micropub: `GET ?q=config` / `?q=source`, `POST` create/update/delete. |
+| `/media` | Micropub **media endpoint** for photo/audio uploads. |
+
+These endpoints send permissive **CORS** headers, so browser-based Micropub
+clients (e.g. Quill) and mobile writing apps can talk to your instance
+cross-origin. Point any Micropub/IndieAuth client at your site URL, sign in with
+your admin password on the IndieAuth screen, and post — `mp-syndicate-to` targets
+(Bluesky/Mastodon) appear automatically when those integrations are enabled.
 
 ---
 

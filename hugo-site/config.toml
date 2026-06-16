@@ -23,6 +23,10 @@ summaryLength = 30
     darkaccent = "#8ab4ff"
     darkbg = "#15171a"
     darktext = "#e6e8eb"
+    headingfonturl = ""
+    headingfontfamily = ""
+    bodyfonturl = ""
+    bodyfontfamily = ""
 
 [taxonomies]
   category = "categories"

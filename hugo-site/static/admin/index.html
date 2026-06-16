@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Macroblog</title>
   <style>
     :root{
@@ -236,20 +236,26 @@
       .sidebar{display:none}
       .shell{flex-direction:column}
       .main{padding:14px 14px 84px}
-      .topbar{display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:20;background:var(--bg);border-bottom:1px solid var(--border);padding:10px 14px}
+      .topbar{display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:20;background:var(--bg);border-bottom:1px solid var(--border);padding:max(10px,env(safe-area-inset-top)) 14px 10px}
       .topbar .brand{margin:0}
       .topbar .name{font-size:20px}
       .topnew{width:42px;height:42px;border-radius:10px;border:1px solid var(--input-border);background:var(--card);color:var(--text);display:flex;align-items:center;justify-content:center}
-      .bottomnav{display:flex;position:fixed;bottom:0;left:0;right:0;z-index:30;background:var(--bg);border-top:1px solid var(--border);padding:6px 4px env(safe-area-inset-bottom);overflow-x:auto;-webkit-overflow-scrolling:touch}
+      .bottomnav{display:flex;position:fixed;bottom:0;left:0;right:0;z-index:30;background:var(--bg);border-top:1px solid var(--border);padding:6px 4px calc(6px + env(safe-area-inset-bottom));overflow-x:auto;-webkit-overflow-scrolling:touch}
       .bottomnav .tab{flex:0 0 auto;min-width:62px;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 4px;color:var(--muted);font-size:11px;font-weight:600}
       .bottomnav .tab svg{width:24px;height:24px}
       .bottomnav .tab.active{color:var(--blue)}
       .post-head{font-size:18px}
       .editor{font-size:16px;min-height:46vh;padding:14px}
       .composer{max-width:none}
-      .toolbar{gap:6px;flex-wrap:wrap}
-      .tbtn{width:42px;height:40px}
-      .btn{padding:10px 16px}
+      .toolbar{gap:8px;flex-wrap:wrap;align-items:stretch}
+      .tbtn{width:44px;height:44px}
+      .btn{padding:11px 16px;min-height:44px}
+      /* Break the action buttons onto their own full-width row and make
+         Post the obvious primary target when publishing from a phone. */
+      .toolbar .count{flex-basis:100%;order:-1}
+      .toolbar .spacer{flex-basis:100%;height:0;margin:0}
+      .toolbar .btn{flex:1 1 0;min-width:0}
+      .toolbar .btn.primary{flex:1.6 1 0}
       .field,.field input,.field select{max-width:none}
       .titlefield,.editor,.replybox{width:100%}
       .grid{grid-template-columns:repeat(3,1fr)}
@@ -1695,7 +1701,7 @@
     // Webmentions kept as a secondary section (incoming from other blogs).
     const pending=webmentions.filter(w=>w.status==="pending");
     if(webmentions.length){
-      view.append(h("h3",{class:"sub"},"Webmentions"+(pending.length?" ("+pending.length+" pending)":"")));
+      view.append(h("h3",{class:"sub"},"Webmentions (deprecated)"+(pending.length?" ("+pending.length+" pending)":"")));
       for(const w of webmentions){
         view.append(h("div",{class:"card"},
           h("div",{},h("b",{},w.author_name||w.author_url||"Anon")," — "+w.type),
@@ -1763,6 +1769,8 @@
       if(d.url){ bannerUrl=d.url; bannerImg.src=d.url; bannerImg.style.visibility="visible"; }
     }});
     const fontSel=h("select",{},...[["system","System default"],["sans","Sans-serif"],["serif","Serif"],["mono","Monospace"],["rounded","Rounded"]].map(([v,l])=>{const o=h("option",{value:v},l);if(v===ap.font)o.selected=true;return o;}));
+    const headFontUrl=inp(ap.heading_font_url||"");
+    const bodyFontUrl=inp(ap.body_font_url||"");
     const modeSel=h("select",{},...[["auto","Auto (follow device)"],["light","Always light"],["dark","Always dark"]].map(([v,l])=>{const o=h("option",{value:v},l);if(v===(ap.mode||"auto"))o.selected=true;return o;}));
     const colorInput=v=>h("input",{type:"color",value:v||"#000000",style:"width:48px;height:34px;border:1px solid var(--input-border);border-radius:8px;padding:2px;background:var(--input-bg)"});
     const fontStacks={system:"-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",sans:"Helvetica,Arial,sans-serif",serif:"Georgia,'Times New Roman',serif",mono:"ui-monospace,Menlo,Consolas,monospace",rounded:"'Avenir Next','Segoe UI',system-ui,sans-serif"};
@@ -1862,7 +1870,8 @@
         microblog:{ping_enabled:ping.checked}, hugo:{theme:themeSel.value},
         appearance:{font:fontSel.value,mode:modeSel.value,
           light_accent:lAccent.value,light_background:lBg.value,light_text:lTxt.value,
-          dark_accent:dAccent.value,dark_background:dBg.value,dark_text:dTxt.value},
+          dark_accent:dAccent.value,dark_background:dBg.value,dark_text:dTxt.value,
+          heading_font_url:headFontUrl.value.trim(),body_font_url:bodyFontUrl.value.trim()},
         navigation:collectNav()}});
       toast.textContent="✓ Saved. Rebuilding…";
       const s=await (await api("/api/hugo/build",{method:"POST"})).json();
@@ -1941,6 +1950,10 @@
         h("div",{style:"display:flex;align-items:center;gap:12px"}, bannerImg,
           h("button",{class:"btn secondary",style:"padding:8px 14px",onclick:()=>bannerFile.click()},"Upload banner"), bannerFile)),
       f("Font",fontSel),
+      h("div",{class:"field"},h("label",{},"Custom heading font (Google Fonts URL)"),headFontUrl,
+        h("p",{class:"hint",style:"color:var(--muted);background:none;border:0;padding:2px 0;margin:4px 0 0"},"Paste the full URL from fonts.google.com → “Get embed code”, e.g. https://fonts.googleapis.com/css2?family=Fraunces:wght@400;700&display=swap — applied to the site name & titles. Leave blank to use the font above.")),
+      h("div",{class:"field"},h("label",{},"Custom body font (Google Fonts URL)"),bodyFontUrl,
+        h("p",{class:"hint",style:"color:var(--muted);background:none;border:0;padding:2px 0;margin:4px 0 0"},"Same idea, applied to body text. Header & body fonts are independent.")),
       f("Light / dark mode",modeSel),
       h("div",{class:"field"},h("label",{},"Light mode colours"),
         h("div",{class:"colorrow"},
@@ -1951,7 +1964,8 @@
       h("div",{class:"field"},h("label",{},"Preview"),previewWrap),
       navSection,
       h("h3",{class:"sub"},"Feeds"), f("Posts per page",perPage), h("label",{class:"ck"},inclReply,"Include replies in main feed"),
-      h("h3",{class:"sub"},"Webmentions"),
+      h("h3",{class:"sub"},"Webmentions (deprecated)"),
+      h("p",{class:"hint",style:"color:var(--muted);background:none;border:0;padding:0;margin:0 0 6px"},"Webmentions are deprecated and off by default. Cross-posting to Bluesky/Mastodon and the unified Mentions inbox cover replies now. Leave these off unless you specifically rely on IndieWeb webmentions."),
       h("label",{class:"ck"},wmRecv,"Receive"),h("label",{class:"ck"},wmSend,"Send"),h("label",{class:"ck"},wmMod,"Hold for moderation"),
       h("h3",{class:"sub"},"Cross-posting"),
       h("label",{class:"ck"},bsEnabled,"Bluesky enabled"),

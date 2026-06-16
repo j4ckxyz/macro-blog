@@ -14,8 +14,19 @@
 {{- $mode := $a.mode | default "auto" -}}
 {{- $la := $a.lightaccent | default "#111111" -}}{{- $lb := $a.lightbg | default "#ffffff" -}}{{- $lt := $a.lighttext | default "#222426" -}}
 {{- $da := $a.darkaccent | default "#8ab4ff" -}}{{- $db := $a.darkbg | default "#15171a" -}}{{- $dt := $a.darktext | default "#e6e8eb" -}}
+{{- /* Optional custom Google Fonts. The family names are parsed server-side
+       (appearance.headingfontfamily / bodyfontfamily); the URLs are the CSS
+       stylesheets to load. Body font overrides the stack; heading font drives
+       the site name + titles via --heading-font. */ -}}
+{{- $headUrl := $a.headingfonturl -}}{{- $headFam := $a.headingfontfamily -}}
+{{- $bodyUrl := $a.bodyfonturl -}}{{- $bodyFam := $a.bodyfontfamily -}}
+{{- $bodyStack := $stack -}}{{- with $bodyFam }}{{ $bodyStack = printf "'%s', %s" . $stack }}{{ end -}}
+{{- $headStack := "var(--user-font)" -}}{{- with $headFam }}{{ $headStack = printf "'%s', %s" . $bodyStack }}{{ end -}}
+{{ if or $headUrl $bodyUrl }}<link rel="preconnect" href="https://fonts.googleapis.com" /><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />{{ end }}
+{{ with $headUrl }}<link rel="stylesheet" href="{{ . }}" />{{ end }}
+{{ if and $bodyUrl (ne $bodyUrl $headUrl) }}<link rel="stylesheet" href="{{ $bodyUrl }}" />{{ end }}
 <style>
-:root{ --user-font: {{ $stack | safeCSS }}; --accent: {{ $la }}; --bg: {{ $lb }}; --ink: {{ $lt }}; --rule: rgba(128,128,128,.18); --muted:#6b7280; }
+:root{ --user-font: {{ $bodyStack | safeCSS }}; --heading-font: {{ $headStack | safeCSS }}; --accent: {{ $la }}; --bg: {{ $lb }}; --ink: {{ $lt }}; --rule: rgba(128,128,128,.18); --muted:#6b7280; }
 {{ if ne $mode "light" }}@media (prefers-color-scheme: dark){
   html:not([data-theme="light"]){ --accent: {{ $da }}; --bg: {{ $db }}; --ink: {{ $dt }}; --muted:#9aa3ad; }
 }{{ end }}
@@ -23,8 +34,9 @@ html[data-theme="dark"]{ --accent: {{ $da }}; --bg: {{ $db }}; --ink: {{ $dt }};
 html[data-theme="light"]{ --accent: {{ $la }}; --bg: {{ $lb }}; --ink: {{ $lt }}; --muted:#6b7280; }
 body{ font-family: var(--user-font); color: var(--ink); background: var(--bg); transition: background .2s,color .2s; }
 a, .site-name, .p-category{ color: var(--accent); }
-.theme-toggle{ background:none;border:1px solid var(--rule);color:var(--muted);border-radius:8px;width:34px;height:30px;cursor:pointer;font-size:14px;line-height:1 }
-.theme-toggle:hover{ color:var(--ink) }
+.theme-toggle{ background:none;border:1px solid var(--rule);color:var(--muted);border-radius:8px;padding:.25rem .55rem;cursor:pointer;font-family:var(--mono);font-size:.75rem;line-height:1 }
+.theme-toggle:hover{ color:var(--ink); border-color:var(--muted) }
+h1,h2,h3,h4,h5,h6,.site-name,.post-title{ font-family: var(--heading-font, var(--user-font)); }
 </style>
 <script>
 (function(){
@@ -32,13 +44,23 @@ a, .site-name, .p-category{ color: var(--accent); }
   var saved = null; try { saved = localStorage.getItem("mb-theme"); } catch(e){}
   var t = saved || forced;
   if (t) document.documentElement.setAttribute("data-theme", t);
+  // Keep the (text) toggle button labelled with the current choice — words,
+  // not glyphs, to match a clean micro.blog-style nav.
+  function label(){
+    var b = document.getElementById("mb-theme-toggle");
+    if(!b) return;
+    var cur = document.documentElement.getAttribute("data-theme");
+    b.textContent = cur === "light" ? "Light" : (cur === "dark" ? "Dark" : "Auto");
+  }
   window.__mbCycleTheme = function(){
     var cur = document.documentElement.getAttribute("data-theme");
-    var mq = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
     // cycle: auto -> light -> dark -> auto
     var next = !cur ? "light" : (cur === "light" ? "dark" : null);
     if (next) { document.documentElement.setAttribute("data-theme", next); try{localStorage.setItem("mb-theme", next);}catch(e){} }
     else { document.documentElement.removeAttribute("data-theme"); try{localStorage.removeItem("mb-theme");}catch(e){} }
+    label();
   };
+  if (document.readyState !== "loading") label();
+  else document.addEventListener("DOMContentLoaded", label);
 })();
 </script>

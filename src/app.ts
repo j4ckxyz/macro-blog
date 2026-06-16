@@ -25,11 +25,35 @@ async function serveAdmin(c: any) {
   return c.text("admin UI not found", 404);
 }
 
+/**
+ * Permissive CORS for the open, standards-based endpoints (Micropub, IndieAuth,
+ * media, discovery). Self-hosted Macroblog is meant to interoperate with any
+ * Micropub/IndieAuth writing client — including browser-based ones (Quill, etc.)
+ * — which require CORS to talk to the endpoint cross-origin. These endpoints are
+ * still bearer-protected, so allowing any origin is safe.
+ */
+async function openCors(c: any, next: any) {
+  const origin = c.req.header("origin") || "*";
+  c.header("Access-Control-Allow-Origin", origin);
+  c.header("Vary", "Origin");
+  c.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  c.header("Access-Control-Allow-Headers", "Authorization, Content-Type");
+  c.header("Access-Control-Expose-Headers", "Location, Link");
+  c.header("Access-Control-Max-Age", "86400");
+  if (c.req.method === "OPTIONS") return c.body(null, 204);
+  await next();
+}
+
 export function createApp(): Hono {
   const app = new Hono();
 
   if (process.env.MACROBLOG_QUIET !== "1") {
     app.use("*", logger());
+  }
+
+  // Cross-origin access for the interoperable IndieWeb endpoints.
+  for (const p of ["/micropub/*", "/micropub", "/media/*", "/media", "/indieauth/*", "/.well-known/*"]) {
+    app.use(p, openCors);
   }
 
   app.get("/health", (c) => c.json({ ok: true }));
