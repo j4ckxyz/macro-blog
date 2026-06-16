@@ -362,13 +362,32 @@ re-run the one-liner installer — it updates an existing checkout in place.
 
 ---
 
-## Importing from Micro.blog
+## Importing content
 
-Export your Micro.blog blog archive (a `.zip` of Markdown + uploads). Copy the
-posts into the matching `hugo-site/content/` subdirectories (short posts →
-`posts/`, titled posts → `articles/`, etc.), copy media into `uploads/`, then run
-`bun run db:migrate` and rebuild. The front-matter fields match Micro.blog's, so
-posts render with the right types.
+Settings → **Import content** brings posts in from several sources. Original
+publication dates are preserved, and re-running an import skips posts already
+present (idempotent).
+
+- **Micro.blog** — paste your JSON Feed URL, **or upload your "Blog Archive"
+  export `.zip` directly** (Settings → Import → choose the `.zip`). The archive
+  importer reads the Hugo-style Markdown natively: microposts (no title) become
+  notes, titled posts become articles, categories/dates are kept, and bundled
+  `uploads/` media is written into your media library with image references
+  rewritten to local `/uploads/` paths — no manual file copying.
+- **Twitter / X** — upload `tweets.js` from your data export. Only your
+  **original** tweets are imported; replies, retweets and blank tweets are
+  skipped.
+- **RSS/Atom, WordPress (WXR), Instagram** — feed URL or file upload.
+
+**Keep imports separate (e.g. a Tweets page).** Any import can be routed into a
+dedicated section by typing a name (e.g. `tweets`) in *"Put these in a separate
+section"*. Those posts get their own page at `/tweets/` and are kept **out of
+your main feed and archive** — add a nav link to them under Navigation. In the
+admin **Posts** list, a section dropdown lets you view and **mass-delete** an
+imported collection on its own (select posts and *Delete selected*).
+
+> Posts dropped onto disk (or the old sample post) are reconciled into the
+> database on startup so they always show up in the admin and can be deleted.
 
 ---
 

@@ -5,6 +5,7 @@ import {
   parseRss,
   parseWordpress,
   parseInstagram,
+  parseMicroblogArchive,
   parseImport,
   toIso,
   htmlToMarkdown,
@@ -103,6 +104,42 @@ describe("parseTwitter (archive)", () => {
     expect(r.photos[0]).toEqual({ url: "https://pbs.twimg.com/m.jpg", alt: "a pic" });
     expect(r.date).toBe("2020-01-02T03:04:05.000Z");
     expect(r.sourceUrl).toContain("123");
+  });
+
+  test("keeps only original tweets — skips replies, RTs and blanks", () => {
+    const recs = parseTwitter(
+      JSON.stringify([
+        { tweet: { id_str: "1", created_at: "Thu Jan 02 03:04:05 +0000 2020", full_text: "an original" } },
+        { tweet: { id_str: "2", created_at: "Thu Jan 02 03:04:05 +0000 2020", full_text: "@bob a reply", in_reply_to_user_id_str: "9" } },
+        { tweet: { id_str: "3", created_at: "Thu Jan 02 03:04:05 +0000 2020", full_text: "@carol mention-reply with no field" } },
+        { tweet: { id_str: "4", created_at: "Thu Jan 02 03:04:05 +0000 2020", full_text: "   " } },
+        { tweet: { id_str: "5", created_at: "Thu Jan 02 03:04:05 +0000 2020", full_text: "RT @x: nope" } },
+      ]),
+    );
+    expect(recs.map((r) => r.content)).toEqual(["an original"]);
+  });
+});
+
+describe("parseMicroblogArchive (Hugo Markdown export)", () => {
+  const enc = (s: string) => new TextEncoder().encode(s);
+  test("imports posts, skips indexes/blanks, rewrites uploads, collects media", () => {
+    const entries = [
+      { path: "_index.md", data: enc("---\ntitle: Home\n---\n") },
+      { path: "2020/01/article.md", data: enc('---\ntitle: "Hi"\ndate: 2020-01-02T10:00:00Z\ncategories:\n  - tech\n---\nbody ![](https://me.micro.blog/uploads/p.jpg)') },
+      { path: "2020/03/micro.md", data: enc("---\ndate: 2020-03-04T08:00:00Z\n---\njust a micropost #tag") },
+      { path: "2020/04/blank.md", data: enc("---\ndate: 2020-04-04T08:00:00Z\n---\n") },
+      { path: "pages/about.md", data: enc("---\ntitle: About\ndate: 2019-01-01T00:00:00Z\n---\npage") },
+      { path: "uploads/p.jpg", data: enc("JPEGDATA") },
+    ];
+    const { records, uploads } = parseMicroblogArchive(entries);
+    expect(records).toHaveLength(2); // index, blank and page skipped
+    const article = records.find((r) => r.title === "Hi")!;
+    expect(article.type).toBe("article");
+    expect(article.categories).toEqual(["tech"]);
+    expect(article.content).toContain("/uploads/p.jpg"); // absolute URL rewritten
+    const micro = records.find((r) => !r.title)!;
+    expect(micro.type).toBe("post");
+    expect(uploads.map((u) => u.path)).toEqual(["p.jpg"]);
   });
 });
 

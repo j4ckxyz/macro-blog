@@ -27,6 +27,9 @@ export interface MicropubCreate {
   status: "published" | "draft"; // post-status
   syndicateTo: string[]; // mp-syndicate-to uids
   slug?: string; // mp-slug
+  /** Optional content-section override (e.g. "tweets"). Lets imports route
+   *  content into a dedicated Hugo section kept out of the main feed/archive. */
+  section?: string;
   // raw mf2 properties for forwarding extra fields
   properties: Record<string, any[]>;
 }
