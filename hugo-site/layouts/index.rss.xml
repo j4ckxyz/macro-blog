@@ -1,0 +1,29 @@
+{{- /* Home RSS 2.0 feed. Mirrors the JSON feed's page selection so custom
+       sections (e.g. an imported "tweets" collection) are kept out of the main
+       feed, exactly like the home page and archive. */ -}}
+{{- $reply := .Site.Params.include_reply_type -}}
+{{- $pages := where .Site.RegularPages "Section" "in" (slice "posts" "articles" "photos" "bookmarks" "podcasts") -}}
+{{- if $reply }}{{ $pages = .Site.RegularPages }}{{ end -}}
+{{- $items := first 40 $pages -}}
+{{- printf "<?xml version=\"1.0\" encoding=\"utf-8\" standalone=\"yes\"?>" | safeHTML }}
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>{{ .Site.Title }}</title>
+    <link>{{ .Site.BaseURL }}</link>
+    <description>{{ with .Site.Params.description }}{{ . }}{{ else }}Recent content on {{ .Site.Title }}{{ end }}</description>
+    <language>{{ .Site.LanguageCode | default "en" }}</language>
+    {{- with .Site.Params.author.name }}<managingEditor>{{ . }}</managingEditor><webMaster>{{ . }}</webMaster>{{ end }}
+    {{- with $items }}<lastBuildDate>{{ (index . 0).Date.Format "Mon, 02 Jan 2006 15:04:05 -0700" | safeHTML }}</lastBuildDate>{{ end }}
+    <atom:link href="{{ .Site.BaseURL }}feed.xml" rel="self" type="application/rss+xml" />
+    {{- range $items }}
+    <item>
+      <title>{{ if .Title }}{{ .Title }}{{ else }}{{ .Summary | plainify | truncate 80 }}{{ end }}</title>
+      <link>{{ .Permalink }}</link>
+      <pubDate>{{ .Date.Format "Mon, 02 Jan 2006 15:04:05 -0700" | safeHTML }}</pubDate>
+      <guid>{{ .Permalink }}</guid>
+      {{- range .Params.categories }}<category>{{ . }}</category>{{ end }}
+      <description>{{ .Content | html }}</description>
+    </item>
+    {{- end }}
+  </channel>
+</rss>

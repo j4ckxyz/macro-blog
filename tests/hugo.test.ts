@@ -20,6 +20,8 @@ beforeAll(async () => {
   await createPost(
     create({ type: "article", name: "Hello Article", content: "Some long-form content.", published: "2026-06-13T12:00:00Z" }),
   );
+  // A post imported into a custom section must stay out of the main feeds.
+  await createPost(create({ content: "An imported tweet body.", section: "tweets", published: "2020-01-02T12:00:00Z" }));
   await fullBuild();
   built = true;
 });
@@ -46,6 +48,15 @@ describe("Hugo build output", () => {
     const rss = await Bun.file(join(PUBLIC_DIR, "feed.xml")).text();
     expect(rss).toContain("<rss");
     expect(rss).toContain("<channel>");
+  });
+
+  test("custom sections are kept out of the main feeds but get their own page", async () => {
+    const rss = await Bun.file(join(PUBLIC_DIR, "feed.xml")).text();
+    const json = await Bun.file(join(PUBLIC_DIR, "feed.json")).json();
+    expect(rss).not.toContain("imported tweet body");
+    expect(JSON.stringify(json.items)).not.toContain("imported tweet body");
+    // The section still renders its own list page.
+    expect(await Bun.file(join(PUBLIC_DIR, "tweets", "index.html")).exists()).toBe(true);
   });
 
   test("post pages carry microformats2 classes", async () => {
