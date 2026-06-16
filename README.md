@@ -115,7 +115,12 @@ day-to-day use.
 1. Open **`http://127.0.0.1:3000/admin/`** (or your domain + `/admin/`).
 2. Sign in with the password you set via `--set-password`.
 3. You land on the **composer** (Micro.blog-style):
-   - Type a note and hit **Post**. Markdown is supported.
+   - Type a note and hit **Post**. It's a live Markdown editor — **bold**,
+     _italic_, `code`, links, headings and #hashtags are styled inline as you
+     type. `#hashtags` cross-post to Bluesky as real, clickable tag facets;
+     bold/italic are stripped when cross-posting (Bluesky/Mastodon are plain
+     text). Keyboard shortcuts: **⌘/Ctrl-B** bold, **⌘/Ctrl-I** italic, and
+     **⌘/Ctrl-K** to wrap the selected text in a link.
    - The **⋯** menu holds post type (Note / Article / Photo / Bookmark), tags,
      scheduling, "save as draft", and cross-post toggles.
    - The toolbar adds images (upload), audio, bold, italic and links.
@@ -397,9 +402,14 @@ hugo-site/             Hugo root (config, default theme, content, data)
 
 ## Troubleshooting
 
-**The admin works but the public site 404s.** The Hugo build is failing.
-Builds are atomic (a failed build can't take the live site down), so check the
-error:
+**The admin works but the public site 404s.** The public site is served from
+Hugo's `public/` output, so if no build has succeeded yet, every public URL has
+nothing to serve. Instead of a bare "Not Found", Macroblog now returns a
+**"Your site isn't built yet"** page that includes the last Hugo build error —
+read it to see the cause (a missing `hugo` binary, a theme error, or a bad
+post). The admin stays reachable at `/admin/` regardless. The Hugo build is
+almost always the culprit; builds are atomic (a failed build can't take a
+working live site down), so check the error:
 
 ```bash
 # Docker

@@ -1,4 +1,6 @@
 import { test, expect, describe, beforeEach, afterEach } from "bun:test";
+import { rmSync } from "node:fs";
+import { join } from "node:path";
 import { freshDb } from "./helpers.ts";
 import { app } from "../src/app.ts";
 import { issueToken } from "../src/lib/indieauth.ts";
@@ -153,6 +155,18 @@ describe("Content import", () => {
     // Second run dedupes on the publish second (published_at carries ms).
     expect((await (await importFeed(items)).json()).imported).toBe(0);
     expect((getDb().query("SELECT COUNT(*) c FROM posts").get() as any).c).toBe(2);
+  });
+});
+
+describe("Public site fallback", () => {
+  test("a public URL returns a self-diagnosing page (not a bare 404) when unbuilt", async () => {
+    // Ensure there is no build output, independent of other test files' order.
+    rmSync(join(process.env.MACROBLOG_PUBLIC!, "index.html"), { force: true });
+    const res = await app.request("/");
+    expect(res.status).toBe(503);
+    const html = await res.text();
+    expect(html).toContain("isn't built yet");
+    expect(html).toContain("/admin/");
   });
 });
 
