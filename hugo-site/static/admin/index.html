@@ -95,6 +95,23 @@
     .editor:focus{border-color:#7aa7ee;box-shadow:0 0 0 3px rgba(58,111,214,.15)}
     .editor::placeholder{color:var(--muted)}
 
+    /* Inline-formatting Markdown editor (contenteditable). Markdown stays as the
+       value; tokens are styled live (bold/italic/code/links/#tags/headings). */
+    .mdedit{white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere}
+    .mdedit.empty:before{content:attr(data-ph);color:var(--muted);pointer-events:none}
+    .md-syn{color:var(--muted);opacity:.5}
+    .md-strong{font-weight:700}
+    .md-em{font-style:italic}
+    .md-bi{font-weight:700;font-style:italic}
+    .md-code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.92em;background:var(--tag-bg);border-radius:4px;padding:0 3px}
+    .md-link{color:var(--blue)}
+    .md-url{color:var(--muted)}
+    .md-tag{color:var(--blue);font-weight:600}
+    .md-h{font-weight:800}
+    .md-quote{color:var(--muted)}
+    .md-img{color:var(--muted)}
+    .md-strike{text-decoration:line-through;color:var(--muted)}
+
     .titlefield{width:100%;border:1.5px solid var(--field);border-radius:12px;padding:12px 16px;font-size:18px;margin-bottom:10px;outline:none}
     .titlefield:focus{border-color:#7aa7ee}
 
@@ -729,7 +746,7 @@
     let type="post";
     const photos=[];
     const title=h("input",{class:"titlefield",placeholder:"Title",style:"display:none"});
-    const editor=h("textarea",{class:"editor",placeholder:"Hello from Macroblog. Use **Markdown** for styling, links, _and more_."});
+    const editor=makeMarkdownEditor("Hello from Macroblog. Use **Markdown** for styling, links, _and more_.");
     const count=h("span",{class:"count"},"0/300");
     const toast=h("div",{class:"toast"});
     const previewPanel=h("div",{class:"preview",style:"display:none"});
@@ -754,8 +771,8 @@
       }
     });
 
-    const wrap=(d)=>{const s=editor.selectionStart,e=editor.selectionEnd,v=editor.value;editor.value=v.slice(0,s)+d+v.slice(s,e)+d+v.slice(e);editor.focus();editor.dispatchEvent(new Event("input"));};
-    const tb=(icon,fn)=>h("button",{class:"tbtn",html:icon,onclick:fn});
+    const wrap=(d)=>editor.wrapSelection(d,d);
+    const tb=(icon,fn)=>h("button",{class:"tbtn",html:icon,onmousedown:e=>e.preventDefault(),onclick:fn});
     const fileInput=h("input",{type:"file",accept:"image/*,video/*",multiple:"true",style:"display:none",onchange:e=>upload(e.target.files)});
     async function upload(files){
       // Categorize current
@@ -1037,7 +1054,7 @@
         h("div",{class:"toolbar"},
           tb(ICON.image,()=>fileInput.click()), tb(ICON.speaker,()=>wrap("")),
           tb(ICON.bold,()=>wrap("**")), tb(ICON.italic,()=>wrap("_")),
-          tb(ICON.link,()=>{const u=prompt("Link URL");if(u){const s=editor.selectionStart,e=editor.selectionEnd,v=editor.value,txt=v.slice(s,e)||"link";editor.value=v.slice(0,s)+"["+txt+"]("+u+")"+v.slice(e);editor.dispatchEvent(new Event("input"));}}),
+          tb(ICON.link,()=>editor.insertLink()),
           count, h("div",{class:"spacer"}),
           h("button",{class:"btn secondary",onclick:togglePreview},"Preview"),
           h("button",{class:"btn secondary",onclick:submit(true)},"Save Draft"),
@@ -1074,6 +1091,137 @@
       if(/^#{1,6}\s/.test(block)){ const lvl=block.match(/^#+/)[0].length; const txt=s.replace(/^#{1,6}\s/,""); return "<h"+Math.min(lvl+1,6)+">"+txt+"</h"+Math.min(lvl+1,6)+">"; }
       return "<p>"+s.replace(/\n/g,"<br>")+"</p>";
     }).join("\n");
+  }
+
+  /* ---------------- inline-formatting Markdown editor ----------------
+     A contenteditable that highlights Markdown inline while keeping the raw
+     Markdown as its value, exposing a textarea-like API (value,
+     selectionStart/End, setSelectionRange, focus) so the composer is unchanged.
+     Note: bold/italic are NOT cross-posted (Bluesky/Mastodon are plain text and
+     strip them server-side) — the inline styling is an authoring aid. */
+  function mdWrapBoth(open,close,cls,tok){
+    const inner=tok.slice(open.length, tok.length-close.length);
+    return '<span class="md-syn">'+escapeHtml(open)+'</span><span class="'+cls+'">'+escapeHtml(inner)+'</span><span class="md-syn">'+escapeHtml(close)+'</span>';
+  }
+  function mdWrapLink(tok){
+    const m=tok.match(/^(!?)\[([^\]]*)\]\(([^)]+)\)$/);
+    if(!m) return escapeHtml(tok);
+    const bang=m[1]?'<span class="md-syn">!</span>':'';
+    return bang+'<span class="md-syn">[</span><span class="'+(m[1]?'md-img':'md-link')+'">'+escapeHtml(m[2])+'</span><span class="md-syn">](</span><span class="md-url">'+escapeHtml(m[3])+'</span><span class="md-syn">)</span>';
+  }
+  function mdInline(text){
+    if(text==="") return "";
+    const re=/(\*\*\*[^\n]+?\*\*\*)|(\*\*[^\n]+?\*\*)|(__[^\n]+?__)|(\*[^\s*][^\n*]*?\*)|(_[^\s_][^\n_]*?_)|(`[^`\n]+?`)|(~~[^\n]+?~~)|(!?\[[^\]\n]*?\]\([^)\n]+?\))|(https?:\/\/[^\s)]+)|(#[A-Za-z0-9][\w-]*)/g;
+    let out="",last=0,m;
+    while((m=re.exec(text))!==null){
+      out+=escapeHtml(text.slice(last,m.index));
+      const tok=m[0], before=text[m.index-1];
+      if(m[1]) out+=mdWrapBoth("***","***","md-bi",tok);
+      else if(m[2]) out+=mdWrapBoth("**","**","md-strong",tok);
+      else if(m[3]) out+=mdWrapBoth("__","__","md-strong",tok);
+      else if(m[4]) out+=mdWrapBoth("*","*","md-em",tok);
+      else if(m[5]) out+=(before&&/\w/.test(before))?escapeHtml(tok):mdWrapBoth("_","_","md-em",tok); // skip snake_case
+      else if(m[6]) out+=mdWrapBoth("`","`","md-code",tok);
+      else if(m[7]) out+=mdWrapBoth("~~","~~","md-strike",tok);
+      else if(m[8]) out+=mdWrapLink(tok);
+      else if(m[9]) out+='<span class="md-link">'+escapeHtml(tok)+'</span>';
+      else if(m[10]) out+=(before&&!/\s/.test(before))?escapeHtml(tok):'<span class="md-tag">'+escapeHtml(tok)+'</span>'; // mid-word # is not a tag
+      last=m.index+tok.length;
+    }
+    out+=escapeHtml(text.slice(last));
+    return out;
+  }
+  function mdHighlightLine(line){
+    const mH=line.match(/^(\s*)(#{1,6})(\s+)([\s\S]*)$/);
+    if(mH) return '<span class="md-syn">'+escapeHtml(mH[1]+mH[2])+'</span>'+escapeHtml(mH[3])+'<span class="md-h">'+mdInline(mH[4])+'</span>';
+    const mQ=line.match(/^(\s*)(>+)(\s?)([\s\S]*)$/);
+    if(mQ) return '<span class="md-syn">'+escapeHtml(mQ[1]+mQ[2]+mQ[3])+'</span><span class="md-quote">'+mdInline(mQ[4])+'</span>';
+    return mdInline(line);
+  }
+  function mdHighlight(src){
+    const lines=String(src==null?"":src).split("\n");
+    let html="";
+    for(let i=0;i<lines.length;i++){ html+=mdHighlightLine(lines[i]); if(i<lines.length-1) html+="\n"; }
+    return html;
+  }
+  function makeMarkdownEditor(placeholder){
+    const el=h("div",{class:"editor mdedit empty",contenteditable:"true",spellcheck:"true","data-ph":placeholder,role:"textbox","aria-multiline":"true"});
+    let composing=false;
+    function getSel(){
+      const sel=window.getSelection();
+      if(!sel.rangeCount||!el.contains(sel.anchorNode)) return null;
+      const r=sel.getRangeAt(0);
+      const pre=r.cloneRange(); pre.selectNodeContents(el); pre.setEnd(r.startContainer,r.startOffset);
+      const start=pre.toString().length;
+      return [start,start+r.toString().length];
+    }
+    function setSel(start,end){
+      end=(end==null)?start:end;
+      const w=document.createTreeWalker(el,NodeFilter.SHOW_TEXT,null);
+      let chars=0,sN=null,sO=0,eN=null,eO=0,node;
+      while((node=w.nextNode())){
+        const len=node.nodeValue.length;
+        if(sN===null&&chars+len>=start){ sN=node; sO=start-chars; }
+        if(eN===null&&chars+len>=end){ eN=node; eO=end-chars; }
+        chars+=len; if(sN&&eN) break;
+      }
+      const r=document.createRange();
+      try{
+        if(sN) r.setStart(sN,sO); else r.setStart(el,el.childNodes.length);
+        if(eN) r.setEnd(eN,eO); else r.setEnd(el,el.childNodes.length);
+      }catch(e){ return; }
+      const sel=window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    }
+    function rerender(){
+      if(composing) return;
+      const sel=getSel();
+      const html=mdHighlight(el.textContent);
+      if(el.innerHTML!==html){ el.innerHTML=html; if(sel) setSel(sel[0],sel[1]); }
+      el.classList.toggle("empty", el.textContent.length===0);
+    }
+    el.addEventListener("input",rerender);
+    el.addEventListener("compositionstart",()=>composing=true);
+    el.addEventListener("compositionend",()=>{composing=false;rerender();});
+    Object.defineProperty(el,"value",{
+      get(){ return el.textContent; },
+      set(v){ const s=String(v==null?"":v); el.innerHTML=mdHighlight(s); el.classList.toggle("empty",s.length===0); }
+    });
+    Object.defineProperty(el,"selectionStart",{ get(){ const s=getSel(); return s?s[0]:el.textContent.length; } });
+    Object.defineProperty(el,"selectionEnd",{ get(){ const s=getSel(); return s?s[1]:el.textContent.length; } });
+    el.setSelectionRange=(s,e)=>{ el.focus(); setSel(s,e); };
+    function replaceRange(s,e,insert,selStart,selEnd){
+      const v=el.value; el.value=v.slice(0,s)+insert+v.slice(e);
+      setSel(selStart,selEnd); el.dispatchEvent(new Event("input"));
+    }
+    el.insertAtCaret=(txt)=>{ const s=el.selectionStart,e=el.selectionEnd; replaceRange(s,e,txt,s+txt.length,s+txt.length); };
+    el.wrapSelection=(open,close)=>{
+      const s=el.selectionStart,e=el.selectionEnd; el.focus();
+      if(s===e) replaceRange(s,e,open+close,s+open.length,s+open.length);
+      else replaceRange(s,e,open+el.value.slice(s,e)+close,s+open.length,e+open.length);
+    };
+    el.insertLink=()=>{
+      const s=el.selectionStart,e=el.selectionEnd,sel=el.value.slice(s,e);
+      const url=prompt("Link URL"); if(!url) return;
+      const text=sel||"link", ins="["+text+"]("+url+")"; el.focus();
+      if(sel) replaceRange(s,e,ins,s+ins.length,s+ins.length);
+      else replaceRange(s,e,ins,s+1,s+1+text.length);
+    };
+    el.addEventListener("keydown",e=>{
+      if((e.metaKey||e.ctrlKey)&&!e.altKey){
+        const k=e.key.toLowerCase();
+        if(k==="b"){ e.preventDefault(); el.wrapSelection("**","**"); return; }
+        if(k==="i"){ e.preventDefault(); el.wrapSelection("_","_"); return; }
+        if(k==="k"){ e.preventDefault(); el.insertLink(); return; }
+      }
+      if(e.key==="Enter"){ e.preventDefault(); el.insertAtCaret("\n"); }
+    });
+    el.addEventListener("paste",e=>{
+      if(e.clipboardData&&e.clipboardData.files&&e.clipboardData.files.length) return; // files: composer handles
+      const txt=e.clipboardData&&e.clipboardData.getData("text/plain");
+      if(txt==null) return;
+      e.preventDefault(); el.insertAtCaret(txt.replace(/\r\n/g,"\n"));
+    });
+    return el;
   }
 
   /* ---------------- posts ---------------- */

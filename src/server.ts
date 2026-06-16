@@ -75,7 +75,17 @@ if (!cfg.auth.password_hash) {
 if (hugoAvailable()) {
   fullBuild()
     .then(() => console.log("✓ Initial Hugo build complete"))
-    .catch((err) => console.error("Initial build failed:", err));
+    .catch((err) =>
+      console.error(
+        "⚠ Initial Hugo build FAILED — the public site will 404 until this is fixed " +
+          "(admin stays reachable at /admin/). Cause:",
+        err,
+      ),
+    );
+} else {
+  console.warn(
+    "⚠ Hugo site directory not found (MACROBLOG_HUGO_SITE) — the public site can't be built and will 404.",
+  );
 }
 startScheduler();
 
