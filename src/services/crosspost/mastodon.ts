@@ -1,5 +1,5 @@
 import { getConfig } from "../../lib/config.ts";
-import { getToken, getTokenExtra, setReauth } from "../../lib/tokens.ts";
+import { getToken, getTokenExtra, saveToken, setReauth } from "../../lib/tokens.ts";
 import type { CrosspostPayload, CrosspostResult, NormalizedMention } from "./types.ts";
 import type { NormalizedTimelineItem } from "../timeline.ts";
 import { splitPostIntoThread, formatChunkForMastodon } from "./thread.ts";
@@ -28,6 +28,30 @@ function authHeader(): string {
   const token = getToken("mastodon");
   if (!token?.access_token) throw new Error("mastodon not connected");
   return `Bearer ${token.access_token}`;
+}
+
+/**
+ * The connected account's own id, used to filter our own replies out of the
+ * Mentions inbox. Resolved once via verify_credentials and cached in the token
+ * extra so we don't refetch on every poll.
+ */
+export async function getMastodonAccountId(): Promise<string | null> {
+  const extra = getTokenExtra("mastodon");
+  if (extra.account_id) return extra.account_id as string;
+  try {
+    const res = await fetch(`${instanceUrl()}/api/v1/accounts/verify_credentials`, {
+      headers: { Authorization: authHeader() },
+    });
+    if (!res.ok) return null;
+    const me = (await res.json()) as { id?: string; acct?: string };
+    if (me?.id) {
+      saveToken("mastodon", { extra: { ...extra, account_id: me.id, acct: me.acct } });
+      return me.id;
+    }
+  } catch {
+    /* best-effort */
+  }
+  return null;
 }
 
 /** Build the status text for a post depending on its type. */
@@ -233,10 +257,13 @@ export async function fetchMastodonMentions(limit = 40): Promise<NormalizedMenti
   }
   checkAuth(res.status);
   const notifs = (await res.json()) as any[];
+  const myId = await getMastodonAccountId();
   const out: NormalizedMention[] = [];
   for (const n of notifs) {
     const s = n.status;
     if (!s) continue;
+    // Skip anything we authored ourselves (e.g. self-replies in our threads).
+    if (myId && s.account?.id === myId) continue;
     out.push({
       platform: "mastodon",
       remoteId: s.id,
@@ -305,5 +332,8 @@ export async function fetchMastodonReplies(statusId: string): Promise<any[]> {
   });
   if (!res.ok) return [];
   const json = (await res.json()) as { descendants?: any[] };
-  return json.descendants ?? [];
+  const myId = await getMastodonAccountId();
+  // Filter out our own replies so answering in our own thread never shows up
+  // as a "mention" of ourselves.
+  return (json.descendants ?? []).filter((d: any) => !myId || d.account?.id !== myId);
 }

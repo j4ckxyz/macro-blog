@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { mkdir } from "node:fs/promises";
 import { getDb } from "../db/index.ts";
 import { getConfig } from "../lib/config.ts";
-import { isConnected } from "../lib/tokens.ts";
+import { isConnected, getTokenExtra } from "../lib/tokens.ts";
 import { HUGO_SITE } from "./content.ts";
 import { scheduleFullBuild } from "./hugo.ts";
 import { fetchMastodonReplies, fetchMastodonMentions } from "./crosspost/mastodon.ts";
@@ -35,6 +35,22 @@ function upsertReply(
   );
 }
 
+/**
+ * Remove any stored replies/mentions that we authored ourselves. New polls
+ * already filter these out at the source, but this also clears rows captured by
+ * older versions so the Mentions inbox never shows your own self-replies.
+ */
+function pruneOwnReplies(db: Database): void {
+  const bsHandle = getTokenExtra("bluesky").handle as string | undefined;
+  if (bsHandle) {
+    db.query("DELETE FROM social_replies WHERE platform = 'bluesky' AND author_handle = ?").run("@" + bsHandle);
+  }
+  const mAcct = getTokenExtra("mastodon").acct as string | undefined;
+  if (mAcct) {
+    db.query("DELETE FROM social_replies WHERE platform = 'mastodon' AND author_handle = ?").run("@" + mAcct);
+  }
+}
+
 /** Pull @-mentions / replies / quotes from Bluesky + Mastodon into the inbox. */
 export async function pollMentions(db: Database = getDb()): Promise<number> {
   const cfg = getConfig();
@@ -64,6 +80,7 @@ export async function pollMentions(db: Database = getDb()): Promise<number> {
       console.warn("[mentions] mastodon", (err as Error).message);
     }
   }
+  pruneOwnReplies(db);
   return count;
 }
 
@@ -129,6 +146,8 @@ export async function pollReplies(db: Database = getDb()): Promise<number> {
       console.warn(`[reply-poll] ${syn.platform}`, (err as Error).message);
     }
   }
+
+  pruneOwnReplies(db);
 
   // Write theme data grouped by slug.
   const all = db.query("SELECT * FROM social_replies ORDER BY created_at ASC").all() as SocialReplyRow[];

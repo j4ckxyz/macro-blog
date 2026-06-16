@@ -80,6 +80,10 @@ export interface AppearanceConfig {
   dark_accent: string;
   dark_background: string;
   dark_text: string;
+  /** Optional Google Fonts CSS URL applied to headings / site name. */
+  heading_font_url: string;
+  /** Optional Google Fonts CSS URL applied to body text. */
+  body_font_url: string;
 }
 
 /** A single top-bar navigation link. */
@@ -140,7 +144,9 @@ const DEFAULTS: MacroblogConfig = {
     bluesky: { enabled: false, handle: "", pds_url: "https://bsky.social", scope: "" },
     mastodon: { enabled: false, instance_url: "" },
   },
-  webmentions: { send: true, receive: true, moderation: true },
+  // Webmentions are deprecated: off by default. Existing installs that enabled
+  // them keep working, but new sites no longer advertise the endpoint.
+  webmentions: { send: false, receive: false, moderation: true },
   feeds: { posts_per_page: 20, include_reply_type: false },
   media: { max_file_size: 52428800 },
   microblog: { ping_enabled: false, ping_url: "https://micro.blog/ping" },
@@ -153,6 +159,8 @@ const DEFAULTS: MacroblogConfig = {
     dark_accent: "#8ab4ff",
     dark_background: "#15171a",
     dark_text: "#e6e8eb",
+    heading_font_url: "",
+    body_font_url: "",
   },
   navigation: {
     items: [

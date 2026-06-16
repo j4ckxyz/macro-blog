@@ -4,6 +4,7 @@
 
   /* Default fallbacks if appearance.html is missing */
   --user-font: var(--serif);
+  --heading-font: var(--user-font);
   --bg: #ffffff;
   --ink: #111111;
   --muted: #666666;
@@ -28,24 +29,25 @@ body {
 .bar {
   max-width: 640px;
   margin: 0 auto;
-  padding: 1rem;
+  padding: 1rem 1.25rem;
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
-  gap: 1rem;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .6rem 1.1rem;
 }
-.site-name { font-weight: 700; text-decoration: none; color: var(--ink); }
-.nav-links { display: flex; align-items: center; flex-wrap: wrap; gap: .15rem 0; }
-.nav-links > a { font-family: var(--mono); font-size: .8rem; color: var(--muted); margin-left: 1rem; text-decoration: none; }
+.site-name { font-weight: 700; font-size: 1.15rem; line-height: 1.2; text-decoration: none; color: var(--ink); margin-right: auto; }
+.nav-links { display: flex; align-items: center; flex-wrap: wrap; gap: .55rem .95rem; }
+.nav-links > a { font-family: var(--mono); font-size: .8rem; color: var(--muted); text-decoration: none; white-space: nowrap; }
 .nav-links > a:hover { color: var(--ink); }
 
 /* social icons */
-.nav-social { display: inline-flex; align-items: center; margin-left: 1rem; gap: .5rem; }
+.nav-social { display: inline-flex; align-items: center; gap: .55rem; }
 .nav-social .social-link { color: var(--muted); display: inline-flex; line-height: 0; }
 .nav-social .social-link:hover { color: var(--accent); }
 
 /* public fuzzy search */
-.nav-search { position: relative; margin-left: 1rem; }
+.nav-search { position: relative; }
 .nav-search-input {
   font-family: var(--mono); font-size: .8rem; color: var(--ink);
   background: transparent; border: 1px solid var(--rule); border-radius: 6px;
@@ -111,3 +113,26 @@ a { color: var(--accent); }
 .webmention { padding: .5rem 0; }
 
 .site-footer { max-width: 640px; margin: 0 auto; padding: 2rem 1rem; color: var(--muted); font-family: var(--mono); font-size: .8rem; border-top: 1px solid var(--rule); }
+
+/* ---------- Mobile ---------- */
+@media (max-width: 640px) {
+  body { font-size: 17px; }
+  .bar {
+    padding: .85rem 1rem;
+    gap: .55rem .9rem;
+    /* Keep the brand on its own row so the links never crowd it. */
+    row-gap: .7rem;
+  }
+  .site-name { font-size: 1.1rem; width: 100%; margin-right: 0; }
+  .nav-links { width: 100%; gap: .5rem .9rem; }
+  /* Let search take the remaining width on its row instead of a fixed 7rem. */
+  .nav-search { flex: 1 1 8rem; min-width: 6rem; }
+  .nav-search-input { width: 100%; }
+  .nav-search-input:focus { width: 100%; }
+  .nav-search-results { width: min(20rem, 92vw); max-width: 92vw; }
+  .content { padding: 1.5rem 1rem 2.5rem; }
+  .post-title { font-size: 1.35rem; }
+  .photo-grid { grid-template-columns: repeat(2, 1fr); }
+  /* Comfortable tap targets for the nav links + toggle. */
+  .nav-links > a, .theme-toggle { padding-block: .2rem; }
+}

@@ -7,6 +7,24 @@ function siteHost(): string {
   return new URL(getConfig().site.url).hostname;
 }
 
+// IndieAuth / OAuth 2.0 Authorization Server Metadata (RFC 8414 + IndieAuth).
+// Modern Micropub clients discover endpoints from here via the
+// <link rel="indieauth-metadata"> tag, in addition to the legacy rel link tags.
+wellknown.get("/oauth-authorization-server", (c) => {
+  const site = baseUrl();
+  return c.json({
+    issuer: site,
+    authorization_endpoint: `${site}indieauth/auth`,
+    token_endpoint: `${site}indieauth/token`,
+    micropub_endpoint: `${site}micropub`,
+    media_endpoint: `${site}media`,
+    code_challenge_methods_supported: ["S256"],
+    grant_types_supported: ["authorization_code"],
+    response_types_supported: ["code"],
+    scopes_supported: ["create", "update", "delete", "media", "draft"],
+  });
+});
+
 // WebFinger — lets Mastodon/Micro.blog look up the blog as a social identity.
 wellknown.get("/webfinger", (c) => {
   const cfg = getConfig();

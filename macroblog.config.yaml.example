@@ -35,8 +35,10 @@ crossposting:
     # OAuth tokens stored in DB — do not put them here
 
 webmentions:
-  send: true
-  receive: true
+  # Deprecated — off by default. Cross-posting + the unified Mentions inbox
+  # cover replies now. Enable only if you specifically rely on IndieWeb webmentions.
+  send: false
+  receive: false
   moderation: true                     # Hold webmentions for approval
 
 feeds:
@@ -61,3 +63,7 @@ appearance:
   dark_accent: "#8ab4ff"
   dark_background: "#15171a"
   dark_text: "#e6e8eb"
+  # Optional custom web fonts — paste the full Google Fonts CSS URL
+  # (fonts.google.com → "Get embed code"). Header & body are independent.
+  heading_font_url: ""                 # e.g. https://fonts.googleapis.com/css2?family=Fraunces:wght@400;700&display=swap
+  body_font_url: ""                    # e.g. https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap

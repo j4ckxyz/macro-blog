@@ -118,6 +118,44 @@ describe("Admin API: unified mentions reply (Mastodon)", () => {
   });
 });
 
+describe("Content import", () => {
+  const importFeed = (items: any[]) =>
+    app.request("/api/import", {
+      method: "POST", headers: auth({ "content-type": "application/json" }),
+      body: JSON.stringify({ source: "microblog", content: JSON.stringify({ version: "https://jsonfeed.org/version/1.1", items }) }),
+    });
+
+  test("future-dated imports are published (not scheduled) so they aren't hidden", async () => {
+    // A record whose date parses into the future (a source/parser artefact)
+    // must still be published — otherwise it's 'scheduled' and Hugo's
+    // buildFuture=false drops it from the site, including the archive.
+    const future = new Date(Date.now() + 5 * 365 * 24 * 3600 * 1000).toISOString();
+    const res = await importFeed([
+      { id: "https://x/1", content_text: "from the future", date_published: future },
+      { id: "https://x/2", content_text: "from the past", date_published: "2018-03-04T10:00:00.000Z" },
+    ]);
+    expect(res.status).toBe(200);
+    expect((await res.json()).imported).toBe(2);
+    const rows = getDb().query("SELECT status, published_at FROM posts").all() as any[];
+    expect(rows).toHaveLength(2);
+    // Neither is scheduled, and both carry a real (non-future) published_at so
+    // Hugo will build them.
+    expect(rows.every((r) => r.status === "published")).toBe(true);
+    expect(rows.every((r) => r.published_at && new Date(r.published_at).getTime() <= Date.now() + 1000)).toBe(true);
+  });
+
+  test("re-importing past-dated content is idempotent", async () => {
+    const items = [
+      { id: "https://x/1", content_text: "one", date_published: "2018-03-04T10:00:00.000Z" },
+      { id: "https://x/2", content_text: "two", date_published: "2019-06-07T08:09:10.000Z" },
+    ];
+    expect((await (await importFeed(items)).json()).imported).toBe(2);
+    // Second run dedupes on the publish second (published_at carries ms).
+    expect((await (await importFeed(items)).json()).imported).toBe(0);
+    expect((getDb().query("SELECT COUNT(*) c FROM posts").get() as any).c).toBe(2);
+  });
+});
+
 describe("Backup", () => {
   test("creates a tar.gz containing the database and content", async () => {
     getDb().query("INSERT INTO posts (slug, file_path, post_type, status) VALUES ('x','posts/x.md','post','published')").run();

@@ -2,7 +2,7 @@
 <html lang="{{ .Site.LanguageCode | default "en" }}">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>{{ if .IsHome }}{{ .Site.Title }}{{ else }}{{ .Title | default .Site.Title }} — {{ .Site.Title }}{{ end }}</title>
   {{ partial "head.html" . }}
   {{ $css := .Site.Params.theme_seconds }}
@@ -41,7 +41,7 @@
         </span>
         {{ end }}
         {{ with $mb }}{{ if .social }}<span class="nav-social">{{ partial "social.html" . }}</span>{{ end }}{{ end }}
-        <button class="theme-toggle" type="button" onclick="window.__mbCycleTheme&&window.__mbCycleTheme()" title="Light / dark" aria-label="Toggle light or dark mode">◐</button>
+        <button class="theme-toggle" id="mb-theme-toggle" type="button" onclick="window.__mbCycleTheme&&window.__mbCycleTheme()" title="Switch light / dark / auto" aria-label="Toggle light or dark mode">Theme</button>
       </span>
     </nav>
   </header>
