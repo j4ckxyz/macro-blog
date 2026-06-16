@@ -7,7 +7,9 @@
  * real timeline. The API layer turns these records into posts.
  */
 
+import yaml from "js-yaml";
 import type { PostType } from "../lib/micropub-parser.ts";
+import type { ZipEntry } from "./zip.ts";
 
 export type ImportSource = "microblog" | "twitter" | "rss" | "wordpress" | "instagram";
 
@@ -131,6 +133,121 @@ export function parseMicroblog(input: string | any): ImportRecord[] {
 }
 
 /* ------------------------------------------------------------------ */
+/* Micro.blog "Blog Archive Format" (Hugo Markdown export .zip)        */
+/* ------------------------------------------------------------------ */
+
+/** Map an upload reference to a local /uploads/ path. */
+function rewriteUpload(url: string): string {
+  if (!url) return url;
+  // Absolute micro.blog upload URL → local path.
+  const abs = url.match(/^https?:\/\/[^/]+\/(uploads\/.+)$/i);
+  if (abs) return "/" + abs[1];
+  if (/^uploads\//i.test(url)) return "/" + url;
+  return url;
+}
+
+/** Rewrite absolute/relative upload URLs inside Markdown body text. */
+function rewriteUploadsInText(text: string): string {
+  return text
+    .replace(/(https?:\/\/[^/\s)"']+)\/uploads\//gi, "/uploads/")
+    .replace(/\]\(uploads\//gi, "](/uploads/");
+}
+
+/** Split YAML/TOML front matter from a Markdown file. */
+function splitFrontMatter(text: string): { fm: Record<string, any>; body: string } {
+  const y = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
+  if (y) {
+    try {
+      const fm = (yaml.load(y[1]) as Record<string, any>) || {};
+      return { fm, body: y[2] ?? "" };
+    } catch {
+      return { fm: {}, body: y[2] ?? "" };
+    }
+  }
+  const t = text.match(/^\+\+\+\r?\n([\s\S]*?)\r?\n\+\+\+\r?\n?([\s\S]*)$/);
+  if (t) {
+    const fm: Record<string, any> = {};
+    for (const line of t[1].split(/\r?\n/)) {
+      const kv = line.match(/^([a-zA-Z0-9_]+)\s*=\s*(.+)$/);
+      if (kv) fm[kv[1]] = kv[2].trim().replace(/^["']|["']$/g, "");
+    }
+    return { fm, body: t[2] ?? "" };
+  }
+  return { fm: {}, body: text };
+}
+
+/** Turn one exported Markdown file into an ImportRecord (or null to skip). */
+function markdownFileToRecord(text: string): ImportRecord | null {
+  const { fm, body } = splitFrontMatter(text);
+  if (fm.draft === true || fm.published === false) return null;
+
+  const title = fm.title && String(fm.title).trim() ? String(fm.title).trim() : undefined;
+  const photos: { url: string; alt?: string }[] = [];
+  const imgs = fm.images ?? fm.photos ?? (fm.image ? [fm.image] : []);
+  if (Array.isArray(imgs)) {
+    for (const im of imgs) {
+      if (typeof im === "string") photos.push({ url: rewriteUpload(im) });
+      else if (im && im.url) photos.push({ url: rewriteUpload(im.url), alt: im.alt || "" });
+    }
+  }
+
+  const content = rewriteUploadsInText(String(body || "")).trim();
+  if (!content && !photos.length && !title) return null; // blank
+
+  const catsRaw = Array.isArray(fm.categories) ? fm.categories : Array.isArray(fm.tags) ? fm.tags : [];
+  const categories = catsRaw.map((c: any) => String(c)).filter(Boolean);
+
+  return {
+    type: title ? "article" : photos.length ? "photo" : "post",
+    title,
+    content,
+    date: toIso(fm.date ?? fm.published ?? fm.lastmod ?? fm.pubDate) || new Date().toISOString(),
+    categories,
+    photos,
+    sourceUrl: fm.url ? String(fm.url) : undefined,
+  };
+}
+
+export interface ArchiveImport {
+  records: ImportRecord[];
+  /** Media to write under the uploads dir, keyed by path relative to uploads/. */
+  uploads: { path: string; data: Uint8Array }[];
+}
+
+/**
+ * Parse a Micro.blog Blog Archive (Hugo Markdown export). Markdown files become
+ * posts (microposts have no title); anything under uploads/ is collected so the
+ * caller can write it into the media library, keeping image references valid.
+ */
+export function parseMicroblogArchive(entries: ZipEntry[]): ArchiveImport {
+  const records: ImportRecord[] = [];
+  const uploads: { path: string; data: Uint8Array }[] = [];
+  const dec = new TextDecoder();
+
+  for (const e of entries) {
+    const path = e.path.replace(/^\/+/, "");
+    const lower = path.toLowerCase();
+    const isMd = lower.endsWith(".md") || lower.endsWith(".markdown");
+
+    // Uploaded media (images/audio/video) → keep for the media library.
+    const up = lower.match(/(?:^|\/)uploads\/(.+)$/);
+    if (up && !isMd) {
+      uploads.push({ path: up[1], data: e.data });
+      continue;
+    }
+    if (!isMd) continue;
+
+    const base = path.split("/").pop() || "";
+    if (base === "_index.md" || base === "index.md") continue; // section/page indexes
+    if (/(^|\/)(pages|_pages)\//.test(lower)) continue; // standalone pages
+
+    const rec = markdownFileToRecord(dec.decode(e.data));
+    if (rec) records.push(rec);
+  }
+  return { records, uploads };
+}
+
+/* ------------------------------------------------------------------ */
 /* Twitter / X archive (tweets.js / tweet.js)                          */
 /* ------------------------------------------------------------------ */
 
@@ -153,6 +270,9 @@ export function parseTwitter(input: string): ImportRecord[] {
     // Skip pure retweets — they aren't your authored content.
     let text: string = t.full_text ?? t.text ?? "";
     if (/^RT @/.test(text)) continue;
+    // Skip replies — keep only your original tweets. The archive marks replies
+    // with in_reply_to_* fields (a leading "@" also denotes a reply).
+    if (t.in_reply_to_status_id_str || t.in_reply_to_user_id_str || /^@\w/.test(text.trim())) continue;
 
     // Expand t.co links to their real URLs.
     for (const u of t.entities?.urls || []) {
@@ -169,6 +289,8 @@ export function parseTwitter(input: string): ImportRecord[] {
       }
     }
     text = decodeEntities(text).replace(/[ \t]+\n/g, "\n").trim();
+    // Skip blank tweets — nothing to publish (no text and no media).
+    if (!text && !photos.length) continue;
     const iso = toIso(t.created_at);
     records.push({
       type: photos.length ? "photo" : "post",

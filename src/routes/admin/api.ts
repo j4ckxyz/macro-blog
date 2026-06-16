@@ -8,10 +8,13 @@ import {
   updatePost,
   deletePost,
   listPosts,
+  listSections,
   readPostFile,
   parseFrontMatter,
+  reconcileContent,
+  sanitizeSection,
 } from "../../services/content.ts";
-import { storeUpload } from "../media.ts";
+import { storeUpload, UPLOADS_DIR } from "../media.ts";
 import {
   queueSyndication,
   retrySyndication,
@@ -41,7 +44,10 @@ import { HUGO_SITE } from "../../services/content.ts";
 import { readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import type { MicropubCreate, PostType } from "../../lib/micropub-parser.ts";
-import { parseImport, isoSeconds, type ImportRecord, type ImportSource } from "../../services/import.ts";
+import { parseImport, parseMicroblogArchive, isoSeconds, type ImportRecord, type ImportSource } from "../../services/import.ts";
+import { unzip } from "../../services/zip.ts";
+import { mkdir } from "node:fs/promises";
+import { dirname } from "node:path";
 import type { PostRow, SyndicationRow, WebmentionRow, MediaRow, SocialReplyRow } from "../../db/schema.ts";
 
 export const adminApi = new Hono();
@@ -69,11 +75,12 @@ adminApi.get("/posts", (c) => {
   const limit = Number(c.req.query("limit") ?? 50);
   const offset = Number(c.req.query("offset") ?? 0);
   const type = c.req.query("type") ?? undefined;
+  const section = c.req.query("section") ?? undefined;
   const folderId = c.req.query("folder_id") ? Number(c.req.query("folder_id")) : undefined;
   const q = c.req.query("q") ?? undefined;
-  
+
   const db = getDb();
-  const posts = listPosts({ status, limit, offset, type, folderId, q }, db);
+  const posts = listPosts({ status, limit, offset, type, section, folderId, q }, db);
   
   const enriched = [];
   for (const p of posts) {
@@ -503,9 +510,10 @@ adminApi.delete("/bookmarks/folders/:id", (c) => {
 const IMPORT_SOURCES: ImportSource[] = ["microblog", "twitter", "rss", "wordpress", "instagram"];
 
 /** Turn parsed import records into posts, skipping ones already present. */
-async function ingestImport(records: ImportRecord[], db = getDb()): Promise<number> {
+async function ingestImport(records: ImportRecord[], db = getDb(), section?: string): Promise<number> {
   let count = 0;
   const nowMs = Date.now();
+  const dest = sanitizeSection(section) || undefined;
   for (const r of records) {
     const origIso = isoSeconds(r.date);
     // Dedupe on the original publish second — re-running an import is a no-op.
@@ -535,6 +543,7 @@ async function ingestImport(records: ImportRecord[], db = getDb()): Promise<numb
         photos: r.photos || [],
         status: "published",
         published,
+        section: dest,
         syndicateTo: [],
         properties: {},
       },
@@ -577,10 +586,58 @@ adminApi.post("/import", async (c) => {
     return c.json({ error: `parse failed: ${(e as Error).message}` }, 400);
   }
 
-  const imported = await ingestImport(records);
+  const imported = await ingestImport(records, getDb(), b.section);
   triggerBuild();
   return c.json({ ok: true, source, found: records.length, imported });
 });
+
+// Micro.blog "Blog Archive Format" (Hugo Markdown export .zip): imports the
+// Markdown posts and writes any bundled uploads/ media into the media library.
+adminApi.post("/import/archive", async (c) => {
+  let form: FormData;
+  try {
+    form = await c.req.formData();
+  } catch {
+    return c.json({ error: "expected multipart/form-data with a 'file'" }, 400);
+  }
+  const file = form.get("file");
+  if (!(file instanceof File)) return c.json({ error: "file required" }, 400);
+  const section = (form.get("section") as string) || undefined;
+
+  let entries;
+  try {
+    entries = unzip(new Uint8Array(await file.arrayBuffer()));
+  } catch (e) {
+    return c.json({ error: `not a valid .zip archive: ${(e as Error).message}` }, 400);
+  }
+
+  const { records, uploads } = parseMicroblogArchive(entries);
+
+  // Write bundled media so /uploads/ references in the posts resolve.
+  let media = 0;
+  for (const u of uploads) {
+    const safe = u.path.replace(/\.\.(?:[/\\]|$)/g, "").replace(/^[/\\]+/, "");
+    if (!safe) continue;
+    const dest = join(UPLOADS_DIR, safe);
+    try {
+      await mkdir(dirname(dest), { recursive: true });
+      await Bun.write(dest, u.data);
+      media++;
+    } catch (err) {
+      console.warn("[import] upload write failed:", (err as Error).message);
+    }
+  }
+
+  const imported = await ingestImport(records, getDb(), section);
+  triggerBuild();
+  return c.json({ ok: true, source: "microblog-archive", found: records.length, imported, media });
+});
+
+// Distinct custom content sections (e.g. "tweets") for the admin posts filter.
+adminApi.get("/sections", (c) => c.json({ sections: listSections() }));
+
+// Re-scan on-disk content into the DB so any orphan files become manageable.
+adminApi.post("/reconcile", (c) => c.json({ added: reconcileContent() }));
 
 // Back-compat alias for the original micro.blog-only endpoint.
 adminApi.post("/import/microblog", async (c) => {

@@ -1235,12 +1235,26 @@
       ...["","post","article","photo","reply","bookmark"].map(t=>h("option",{value:t},t||"all types")));
 
     const folderSel=h("select",{onchange:()=>load(),style:"border:1px solid var(--input-border);border-radius:8px;padding:7px 10px;font-size:14px;"});
-    
+
+    // Custom sections (e.g. imported "tweets") so they can be viewed/managed apart.
+    const sectionSel=h("select",{onchange:()=>load(),style:"border:1px solid var(--input-border);border-radius:8px;padding:7px 10px;font-size:14px;display:none;"});
+
     const searchInput=h("input",{type:"text",placeholder:"Search posts…",style:"border:1px solid var(--input-border);border-radius:8px;padding:7px 10px;font-size:14px;flex:1;",oninput:debounce(()=>load(), 300)});
 
     const filterRow = h("div",{style:"display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center;"},
-      statusSel, typeSel, folderSel, searchInput
+      statusSel, typeSel, sectionSel, folderSel, searchInput
     );
+
+    (async ()=>{
+      try{
+        const {sections}=await (await api("/api/sections")).json();
+        if(sections && sections.length){
+          sectionSel.append(h("option",{value:""},"all sections"));
+          for(const s of sections) sectionSel.append(h("option",{value:s.section},s.section+" ("+s.count+")"));
+          sectionSel.style.display="";
+        }
+      }catch(e){}
+    })();
 
     // Multi-select state (by slug) + bulk action bar.
     let currentPosts=[];
@@ -1263,7 +1277,7 @@
           for(const p of posts){ await api("/api/posts/"+p.slug,{method:"DELETE"}); }
           selected.clear(); load();
         }, {danger:true});
-      }},"🗑 Delete selected")
+      }},"Delete selected")
     );
 
     const list=h("div");
@@ -1295,6 +1309,7 @@
       let queryStr = "?limit=100";
       if (status) queryStr += "&status=" + encodeURIComponent(status);
       if (type) queryStr += "&type=" + encodeURIComponent(type);
+      if (sectionSel.value) queryStr += "&section=" + encodeURIComponent(sectionSel.value);
       if (folderId) queryStr += "&folder_id=" + encodeURIComponent(folderId);
       if (q) queryStr += "&q=" + encodeURIComponent(q);
       
@@ -2029,13 +2044,14 @@
 
     // Per-source metadata: which input modes apply, file accept filter, hints.
     const IMPORT_SOURCES = {
-      microblog: {label:"Micro.blog (JSON Feed)", url:"https://username.micro.blog/feed.json", accept:".json", file:"feed.json / export.json", urlMode:true},
-      rss:       {label:"RSS / Atom feed", url:"https://example.com/feed.xml", accept:".xml,.rss,.atom", file:"feed.xml / atom.xml", urlMode:true},
-      twitter:   {label:"Twitter / X archive", url:"", accept:".js,.json", file:"tweets.js (from your X data export)", urlMode:false},
-      wordpress: {label:"WordPress (WXR)", url:"", accept:".xml,.wxr", file:"WordPress eXtended RSS .xml", urlMode:false},
-      instagram: {label:"Instagram archive", url:"", accept:".json", file:"posts_1.json (from your IG data export)", urlMode:false},
+      microblog: {label:"Micro.blog (JSON Feed or Blog Archive .zip)", url:"https://username.micro.blog/feed.json", accept:".json,.zip", file:"feed.json, or your Blog Archive export (.zip)", urlMode:true, sectionDefault:""},
+      rss:       {label:"RSS / Atom feed", url:"https://example.com/feed.xml", accept:".xml,.rss,.atom", file:"feed.xml / atom.xml", urlMode:true, sectionDefault:""},
+      twitter:   {label:"Twitter / X archive", url:"", accept:".js,.json", file:"tweets.js (from your X data export)", urlMode:false, sectionDefault:"tweets"},
+      wordpress: {label:"WordPress (WXR)", url:"", accept:".xml,.wxr", file:"WordPress eXtended RSS .xml", urlMode:false, sectionDefault:""},
+      instagram: {label:"Instagram archive", url:"", accept:".json", file:"posts_1.json (from your IG data export)", urlMode:false, sectionDefault:""},
     };
     const importSourceSel = h("select",{},...Object.entries(IMPORT_SOURCES).map(([v,m])=>h("option",{value:v},m.label)));
+    const importSectionInput = h("input",{type:"text",placeholder:"(none — mix into your main posts)",style:"width:100%;border:1px solid var(--input-border);border-radius:8px;padding:9px 11px;font-size:14px;"});
     const importUrlInput = h("input",{type:"text",placeholder:IMPORT_SOURCES.microblog.url,style:"width:100%;border:1px solid var(--input-border);border-radius:8px;padding:9px 11px;font-size:14px;"});
     const importUrlRow = h("div",{class:"field"},h("label",{},"Feed URL"),
       h("div",{style:"display:flex;gap:8px"}, importUrlInput,
@@ -2046,13 +2062,25 @@
 
     async function runImport(payload){
       const source = importSourceSel.value;
+      const section = importSectionInput.value.trim();
       toast.textContent = "Importing…";
-      const r = await api("/api/import",{method:"POST",json:{source,...payload}});
+      const r = await api("/api/import",{method:"POST",json:{source,section,...payload}});
+      await finishImport(r, source);
+    }
+    async function runArchiveImport(file){
+      const section = importSectionInput.value.trim();
+      const fd = new FormData(); fd.set("file", file); if(section) fd.set("section", section);
+      toast.textContent = "Uploading & importing archive…";
+      const r = await api("/api/import/archive",{method:"POST",body:fd});
+      await finishImport(r, "Micro.blog archive");
+    }
+    async function finishImport(r, source){
       if (r.ok) {
         const res = await r.json();
-        toast.textContent = `✓ Imported ${res.imported} of ${res.found} ${source} posts. Rebuilding site…`;
+        const media = res.media ? `, ${res.media} media file${res.media>1?"s":""}` : "";
+        toast.textContent = `✓ Imported ${res.imported} of ${res.found} ${source} posts${media}. Rebuilding site…`;
         await api("/api/hugo/build",{method:"POST"});
-        toast.textContent = `✓ Imported ${res.imported} posts & rebuilt site.`;
+        toast.textContent = `✓ Imported ${res.imported} posts${media} & rebuilt site.`;
       } else {
         toast.textContent = "✗ Import failed: " + (await r.text());
       }
@@ -2060,11 +2088,16 @@
 
     importFileInput.addEventListener("change", e=>{
       const file = e.target.files[0]; if(!file) return;
-      toast.textContent = "Reading file…";
-      const reader = new FileReader();
-      reader.onload = evt => runImport({content: evt.target.result});
-      reader.onerror = () => { toast.textContent = "✗ Could not read file."; };
-      reader.readAsText(file);
+      // A .zip is a Micro.blog Blog Archive — upload it as binary; otherwise read text.
+      if (/\.zip$/i.test(file.name)) {
+        runArchiveImport(file);
+      } else {
+        toast.textContent = "Reading file…";
+        const reader = new FileReader();
+        reader.onload = evt => runImport({content: evt.target.result});
+        reader.onerror = () => { toast.textContent = "✗ Could not read file."; };
+        reader.readAsText(file);
+      }
       importFileInput.value = "";
     });
 
@@ -2074,14 +2107,17 @@
       importUrlRow.style.display = m.urlMode ? "" : "none";
       importFileHint.textContent = (m.urlMode ? "Or upload " : "Upload ") + m.file;
       importFileInput.accept = m.accept;
+      importSectionInput.value = m.sectionDefault || "";
     };
     importSourceSel.addEventListener("change", syncImportMode);
     syncImportMode();
 
     const importSection = h("div",{},
       h("h3",{class:"sub"},"Import content"),
-      h("p",{class:"hint",style:"color:var(--muted);font-size:13px;margin:0 0 8px"},"Original publication dates are preserved, and re-running an import skips posts already present."),
+      h("p",{class:"hint",style:"color:var(--muted);font-size:13px;margin:0 0 8px"},"Original publication dates are preserved, and re-running an import skips posts already present. Twitter/X imports keep only your original tweets (replies, retweets and blanks are skipped)."),
       f("Source", importSourceSel),
+      h("div",{class:"field"},h("label",{},"Put these in a separate section (optional)"),importSectionInput,
+        h("p",{class:"hint",style:"color:var(--muted);background:none;border:0;padding:2px 0;margin:4px 0 0"},"e.g. “tweets” — keeps them on their own page (/tweets/), out of your main feed and archive. Add a nav link to it under Navigation. Leave blank to mix them into your posts.")),
       importUrlRow,
       h("div",{class:"field"}, importFileHint,
         h("div",{style:"display:flex;gap:8px;align-items:center;"}, importFileBtn, importFileInput))

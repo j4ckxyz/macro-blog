@@ -7,6 +7,7 @@ import { getConfig, saveConfig, reloadConfig, CONFIG_PATH, type MacroblogConfig 
 import { getDb } from "./db/index.ts";
 import { hashPassword, randomToken } from "./lib/indieauth.ts";
 import { fullBuild, hugoAvailable } from "./services/hugo.ts";
+import { reconcileContent } from "./services/content.ts";
 import { startScheduler } from "./services/scheduler.ts";
 
 /**
@@ -53,6 +54,14 @@ const cfg = await bootstrap();
 
 // Ensure DB is migrated.
 getDb();
+
+// Make any on-disk posts without a DB row (the old sample post, a dropped-in
+// export, drift from older versions) manageable from the admin.
+try {
+  reconcileContent();
+} catch (err) {
+  console.warn("[content] reconcile skipped:", (err as Error).message);
+}
 
 // Host/port may be overridden by env (Docker binds 0.0.0.0; mapping controls exposure).
 const host = process.env.MACROBLOG_HOST || cfg.server.host;

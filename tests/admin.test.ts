@@ -1,5 +1,5 @@
 import { test, expect, describe, beforeEach, afterEach } from "bun:test";
-import { rmSync } from "node:fs";
+import { rmSync, mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { freshDb } from "./helpers.ts";
 import { app } from "../src/app.ts";
@@ -155,6 +155,85 @@ describe("Content import", () => {
     // Second run dedupes on the publish second (published_at carries ms).
     expect((await (await importFeed(items)).json()).imported).toBe(0);
     expect((getDb().query("SELECT COUNT(*) c FROM posts").get() as any).c).toBe(2);
+  });
+
+  test("importing into a separate section keeps it apart and filterable", async () => {
+    const res = await app.request("/api/import", {
+      method: "POST", headers: auth({ "content-type": "application/json" }),
+      body: JSON.stringify({
+        source: "microblog", section: "Tweets",
+        content: JSON.stringify({ version: "https://jsonfeed.org/version/1.1", items: [
+          { id: "https://x/1", content_text: "a tweet", date_published: "2018-03-04T10:00:00.000Z" },
+        ] }),
+      }),
+    });
+    expect((await res.json()).imported).toBe(1);
+    // Stored under content/tweets/ (sanitised) and surfaced by /api/sections.
+    const row = getDb().query("SELECT file_path FROM posts").get() as any;
+    expect(row.file_path.startsWith("tweets/")).toBe(true);
+    const { sections } = await (await app.request("/api/sections", { headers: auth() })).json();
+    expect(sections).toEqual([{ section: "tweets", count: 1 }]);
+    const list = await (await app.request("/api/posts?section=tweets", { headers: auth() })).json();
+    expect(list.posts).toHaveLength(1);
+  });
+});
+
+// Build a minimal STORED (uncompressed) zip — enough for the reader, which uses
+// the central directory and ignores CRCs.
+function makeZip(files: Record<string, Uint8Array>): Uint8Array {
+  const out: number[] = [];
+  const u16 = (n: number) => [n & 255, (n >> 8) & 255];
+  const u32 = (n: number) => [n & 255, (n >> 8) & 255, (n >> 16) & 255, (n >> 24) & 255];
+  const enc = new TextEncoder();
+  const central: number[] = [];
+  for (const [name, data] of Object.entries(files)) {
+    const nb = enc.encode(name);
+    const localOffset = out.length;
+    out.push(0x50, 0x4b, 0x03, 0x04, ...u16(20), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(data.length), ...u32(data.length), ...u16(nb.length), ...u16(0));
+    out.push(...nb, ...data);
+    central.push(0x50, 0x4b, 0x01, 0x02, ...u16(20), ...u16(20), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(data.length), ...u32(data.length), ...u16(nb.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(localOffset));
+    central.push(...nb);
+  }
+  const cdOffset = out.length;
+  out.push(...central);
+  out.push(0x50, 0x4b, 0x05, 0x06, ...u16(0), ...u16(0), ...u16(Object.keys(files).length), ...u16(Object.keys(files).length), ...u32(central.length), ...u32(cdOffset), ...u16(0));
+  return new Uint8Array(out);
+}
+
+describe("Micro.blog Blog Archive import (zip)", () => {
+  test("imports markdown posts and writes bundled uploads", async () => {
+    const enc = (s: string) => new TextEncoder().encode(s);
+    const zip = makeZip({
+      "_index.md": enc("---\ntitle: Home\n---\n"),
+      "2020/01/post.md": enc('---\ntitle: "Imported"\ndate: 2020-01-02T10:00:00Z\n---\nhello ![](https://me.micro.blog/uploads/p.jpg)'),
+      "uploads/p.jpg": enc("JPEGDATA"),
+    });
+    const form = new FormData();
+    form.set("file", new File([zip as BlobPart], "export.zip", { type: "application/zip" }));
+    const res = await app.request("/api/import/archive", { method: "POST", headers: auth(), body: form });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.imported).toBe(1);
+    expect(body.media).toBe(1);
+    expect(getDb().query("SELECT 1 FROM posts WHERE title = 'Imported'").get()).toBeTruthy();
+    // The bundled image was written into the uploads dir.
+    expect(existsSync(join(process.env.MACROBLOG_UPLOADS!, "p.jpg"))).toBe(true);
+  });
+});
+
+describe("Content reconcile", () => {
+  test("an on-disk post with no DB row becomes manageable", async () => {
+    const dir = join(process.env.MACROBLOG_HUGO_SITE!, "content", "posts");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "orphan-note.md"),
+      `+++\ntitle = ""\ndate = "2021-05-06T12:00:00Z"\ntype = "post"\ndraft = false\n+++\n\nan orphaned on-disk note\n`,
+    );
+    expect(getDb().query("SELECT 1 FROM posts WHERE slug = 'orphan-note'").get()).toBeNull();
+    const res = await app.request("/api/reconcile", { method: "POST", headers: auth() });
+    expect((await res.json()).added).toBeGreaterThanOrEqual(1);
+    const list = await (await app.request("/api/posts", { headers: auth() })).json();
+    expect(list.posts.some((p: any) => p.slug === "orphan-note")).toBe(true);
   });
 });
 

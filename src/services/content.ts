@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { resolve, join, relative } from "node:path";
 import { mkdir } from "node:fs/promises";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { getDb } from "../db/index.ts";
 import type { PostRow } from "../db/schema.ts";
 import { getConfig, baseUrl } from "../lib/config.ts";
@@ -18,6 +19,20 @@ const TYPE_DIRS: Record<PostType, string> = {
   bookmark: "bookmarks",
   podcast: "podcasts",
 };
+
+/** The standard sections that make up the main feed / archive. */
+export const CORE_SECTIONS = ["posts", "articles", "photos", "replies", "bookmarks", "podcasts"];
+
+/**
+ * Sanitise a custom section name (e.g. "Tweets" → "tweets"). Returns "" when the
+ * name is empty or a reserved/core section, so callers fall back to the type dir.
+ */
+export function sanitizeSection(name: string | undefined | null): string {
+  if (!name) return "";
+  const s = String(name).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+  if (!s || CORE_SECTIONS.includes(s) || s === "pages") return "";
+  return s;
+}
 
 export interface FrontMatter {
   title?: string;
@@ -260,7 +275,9 @@ export async function createPost(
     }
   }
 
-  const dir = TYPE_DIRS[req.type];
+  // A custom section (e.g. "tweets") routes content into its own Hugo section,
+  // kept out of the main feed/archive; otherwise use the per-type directory.
+  const dir = sanitizeSection(req.section) || TYPE_DIRS[req.type];
   const relPath = join(dir, `${slug}.md`);
   const absPath = join(CONTENT_DIR, relPath);
   await mkdir(join(CONTENT_DIR, dir), { recursive: true });
@@ -453,7 +470,7 @@ export async function addSyndicationUrl(post: PostRow, url: string): Promise<voi
 }
 
 export function listPosts(
-  opts: { status?: string; limit?: number; offset?: number; type?: string; folderId?: number; q?: string } = {},
+  opts: { status?: string; limit?: number; offset?: number; type?: string; section?: string; folderId?: number; q?: string } = {},
   db: Database = getDb(),
 ): PostRow[] {
   const limit = opts.limit ?? 50;
@@ -474,7 +491,13 @@ export function listPosts(
     queryStr += " AND post_type = ?";
     params.push(opts.type);
   }
-  
+
+  if (opts.section) {
+    // file_path is "<section>/<slug>.md", so match by directory prefix.
+    queryStr += " AND file_path LIKE ?";
+    params.push(`${opts.section}/%`);
+  }
+
   if (opts.folderId) {
     queryStr += " AND bookmark_folder_id = ?";
     params.push(opts.folderId);
@@ -491,4 +514,72 @@ export function listPosts(
   return db.query(queryStr).all(...params) as PostRow[];
 }
 
+/**
+ * Distinct non-core content sections present in the DB (e.g. "tweets") with a
+ * post count each — used by the admin to filter/manage imported collections.
+ */
+export function listSections(db: Database = getDb()): { section: string; count: number }[] {
+  const rows = db
+    .query(
+      `SELECT substr(file_path, 1, instr(file_path, '/') - 1) AS section, COUNT(*) AS count
+       FROM posts WHERE status != 'deleted' AND instr(file_path, '/') > 0
+       GROUP BY section ORDER BY section`,
+    )
+    .all() as { section: string; count: number }[];
+  return rows.filter((r) => r.section && !CORE_SECTIONS.includes(r.section));
+}
+
 export { TYPE_DIRS };
+
+/**
+ * Ensure every Markdown file on disk has a matching `posts` row so it shows up
+ * in the admin and can be edited or deleted. Files can exist without a row —
+ * the shipped sample post, a Hugo/Micro.blog export dropped into content/, or
+ * drift from older versions — and would otherwise be unmanageable. Scans the
+ * core type dirs plus any extra custom sections (e.g. "tweets"). Returns the
+ * number of rows added.
+ */
+export function reconcileContent(db: Database = getDb()): number {
+  if (!existsSync(CONTENT_DIR)) return 0;
+  let added = 0;
+  const now = Date.now();
+  // Core type dirs (with their post_type) + any other top-level section dirs.
+  const dirs = new Map<string, PostType | null>();
+  for (const [type, dir] of Object.entries(TYPE_DIRS)) dirs.set(dir, type as PostType);
+  for (const entry of readdirSync(CONTENT_DIR, { withFileTypes: true })) {
+    if (entry.isDirectory() && !dirs.has(entry.name) && entry.name !== "pages") dirs.set(entry.name, null);
+  }
+
+  for (const [dir, type] of dirs) {
+    const abs = join(CONTENT_DIR, dir);
+    if (!existsSync(abs)) continue;
+    let names: string[];
+    try { names = readdirSync(abs); } catch { continue; }
+    for (const name of names) {
+      if (!name.endsWith(".md") || name === "_index.md") continue;
+      const slug = name.slice(0, -3);
+      if (db.query("SELECT 1 FROM posts WHERE slug = ?").get(slug)) continue;
+      let fm: Record<string, any> = {}, body = "";
+      try {
+        ({ frontMatter: fm, body } = parseFrontMatter(readFileSync(join(abs, name), "utf8")));
+      } catch { /* fall through with defaults */ }
+      const postType = (fm.type as PostType) || type || "post";
+      const dateObj = new Date(fm.date || new Date().toISOString());
+      const valid = !isNaN(dateObj.getTime()) ? dateObj : new Date();
+      const draft = fm.draft === true || fm.draft === "true";
+      const status = draft ? "draft" : valid.getTime() > now + 1000 ? "scheduled" : "published";
+      db.query(
+        `INSERT INTO posts (slug, file_path, post_type, title, status, published_at, scheduled_at, content, categories_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        slug, join(dir, name), postType, fm.title || null, status,
+        status === "published" ? valid.toISOString() : null,
+        status === "scheduled" ? valid.toISOString() : null,
+        (body || "").trim(), JSON.stringify(Array.isArray(fm.categories) ? fm.categories : []),
+      );
+      added++;
+    }
+  }
+  if (added) console.log(`[content] reconciled ${added} on-disk post(s) into the database`);
+  return added;
+}
